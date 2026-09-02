@@ -140,6 +140,24 @@ async def main():
     )
     dp = Dispatcher(storage=storage)
 
+    # Render.com / Cloud Web Service lari uchun health check port
+    port = os.getenv("PORT")
+    if port:
+        try:
+            from aiohttp import web
+            app = web.Application()
+            async def health(req):
+                return web.Response(text="SMM Bot is Running! ✅")
+            app.router.add_get("/", health)
+            app.router.add_get("/health", health)
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", int(port))
+            await site.start()
+            logger.info(f"🌐 Cloud Healthcheck HTTP server {port}-portda ishga tushdi")
+        except Exception as e:
+            logger.warning(f"Health server sozlashda xato: {e}")
+
     # Middlewares (Tartib juda muhim!)
     # 1. Database session inject
     dp.update.outer_middleware(DatabaseMiddleware())

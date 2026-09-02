@@ -1,0 +1,42 @@
+services:
+  # ============================================
+  # SMM Telegram Bot — Background Worker
+  # Renderda to'xtovsiz, barqaror ishlaydi
+  # ============================================
+  - type: worker
+    name: smm-telegram-bot
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python bot.py
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
+      - key: ORDER_GROUP_ID
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smm-postgres-db
+          property: connectionString
+      - key: BOT_USERNAME
+        value: APEXSMM_BOT
+      - key: LOG_LEVEL
+        value: INFO
+
+# ============================================
+# Doimiy PostgreSQL Bazasi (Persistent Database)
+# Server o'chib yonsa ham hech qanday ma'lumot O'CHMAYDI!
+# ============================================
+databases:
+  - name: smm-postgres-db
+    databaseName: smm_bot_db
+    user: smm_admin
+    region: frankfurt
+    plan: free
+    ipAllowList: []

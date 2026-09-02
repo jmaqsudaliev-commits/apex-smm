@@ -15,9 +15,19 @@ from database.models import Base
 from config import settings
 
 
+def get_db_url() -> str:
+    """Database URL ni asinxron formatga moslashtirish (Render/Cloud uchun)"""
+    url = settings.database_url.strip()
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
 def _get_engine_kwargs():
     """Database turiga qarab engine parametrlarini qaytaradi"""
-    url = settings.database_url
+    url = get_db_url()
 
     if url.startswith("sqlite"):
         # SQLite uchun — WAL mode yoqilgan (tezroq yozish)
@@ -39,7 +49,7 @@ def _get_engine_kwargs():
 
 # Asinxron engine yaratish
 engine = create_async_engine(
-    settings.database_url,
+    get_db_url(),
     **_get_engine_kwargs()
 )
 
