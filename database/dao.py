@@ -250,6 +250,7 @@ class ServiceDAO:
         max_quantity: int = 100000,
         description: Optional[str] = None,
         api_service_id: Optional[int] = None,
+        sort_order: int = 0,
     ) -> Service:
         service = Service(
             category_id=category_id,
@@ -259,6 +260,7 @@ class ServiceDAO:
             max_quantity=max_quantity,
             description=description,
             api_service_id=api_service_id,
+            sort_order=sort_order,
         )
         session.add(service)
         await session.commit()

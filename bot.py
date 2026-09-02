@@ -31,6 +31,14 @@ from handlers import setup_routers
 
 def setup_logger():
     """Log tizimini sozlash"""
+    try:
+        if hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
     logger.remove()
     # Konsolga chiqarish
     logger.add(
