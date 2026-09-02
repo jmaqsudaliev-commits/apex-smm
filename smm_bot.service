@@ -1,0 +1,15 @@
+[Unit]
+Description=SMM Panel Telegram Bot Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/var/www/smm_bot
+ExecStart=/var/www/smm_bot/venv/bin/python bot.py
+Restart=always
+RestartSec=5
+EnvironmentFile=/var/www/smm_bot/.env
+
+[Install]
+WantedBy=multi-user.target

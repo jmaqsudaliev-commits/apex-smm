@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # ============================================
+  # 1. PostgreSQL — Asosiy ma'lumotlar bazasi
+  # 1M+ foydalanuvchilar va buyurtmalar uchun
+  # ============================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: smm_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: smm_bot_db
+      POSTGRES_USER: smm_user
+      POSTGRES_PASSWORD: smm_strong_password_2026
+      TZ: Asia/Tashkent
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    command: >
+      postgres -c max_connections=200
+               -c shared_buffers=256MB
+               -c effective_cache_size=768MB
+               -c maintenance_work_mem=64MB
+               -c checkpoint_completion_target=0.9
+               -c wal_buffers=16MB
+               -c default_statistics_target=100
+               -c random_page_cost=1.1
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smm_user -d smm_bot_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # 2. Redis — FSM holatlari va kesh
+  # Server o'chib yonsa ma'lumot saqlanadi (AOF yoqilgan)
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    container_name: smm_redis
+    restart: always
+    command: redis-server --appendonly yes --appendfsync everysec --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # 3. Telegram Bot
+  # Avtomatik restart va barqaror ishlash
+  # ============================================
+  bot:
+    build: .
+    container_name: smm_bot
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://smm_user:smm_strong_password_2026@postgres:5432/smm_bot_db
+      REDIS_URL: redis://redis:6379/0
+      TZ: Asia/Tashkent
+    volumes:
+      - bot_data:/app/data
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  bot_data:
+    driver: local
