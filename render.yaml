@@ -3,7 +3,7 @@ services:
   # SMM Telegram Bot — Background Worker
   # Renderda to'xtovsiz, barqaror ishlaydi
   # ============================================
-  - type: worker
+  - type: web
     name: smm-telegram-bot
     runtime: python
     region: frankfurt
