@@ -120,6 +120,26 @@ python bot.py
 
 ---
 
-## 📌 Muhim Eslatmalar
-- **Admin bo'lish:** Telegramdagi raqamli ID ingizni (masalan `@userinfobot` orqali olishingiz mumkin) `.env` fayldagi `ADMIN_IDS` ga yozing.
-- **Admin guruh:** Botni guruhingizga qo'shib admin qiling, so'ngra guruh ID sini (masalan `-100...`) botning admin panelidagi `⚙️ Sozlamalar -> Buyurtmalar guruhi` ga kiriting.
+## 🌐 Render.com ga Joylash (Ma'lumotlar 100% O'chmaydi!)
+
+Loyiha uchun maxsus [`render.yaml`](file:///c:/Users/Rayimjonov/Desktop/smm%20bot/render.yaml) (Blueprint) tayyorlandi. Bu fayl Renderda:
+1. **Doimiy PostgreSQL 16** bazasini avtomatik yaratadi.
+2. Botni doimiy **Worker** sifatida ishga tushiradi va bazaga ulaydi.
+3. Server qayta yonganda yoki yangi versiya yuklanganda ham **barcha balanslar, buyurtmalar va sozlamalar 100% saqlanadi**!
+
+### Qadamlar:
+1. Loyihani GitHub repozitoriyangizga yuklang:
+   ```bash
+   git remote add origin https://github.com/SIZNING_USERNAME/SIZNING_REPO.git
+   git branch -M main
+   git push -u origin main
+   ```
+2. **[Render.com](https://dashboard.render.com)** ga kiring.
+3. **"New +"** tugmasini bosing va **"Blueprint"** ni tanlang.
+4. GitHub repozitoriyangizni tanlang.
+5. Render avtomatik ravishda `render.yaml` ni o'qiydi va quyidagilarni so'raydi:
+   - `BOT_TOKEN` — `8721599901:AAGTu4siikElZPkBqgQvGPZEQrvEzZ_ZSSM`
+   - `ADMIN_IDS` — `8809344628`
+   - `ORDER_GROUP_ID` — Buyurtmalar guruhi ID si (ixtiyoriy)
+6. **"Apply"** tugmasini bosing.
+7. **Bo'ldi!** Render avtomatik ravishda PostgreSQL bazani ishga tushiradi, jadvallarni yaratadi va botni to'xtovsiz yurgizib qo'yadi!
