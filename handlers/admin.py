@@ -1270,3 +1270,133 @@ async def admin_remove_admin(callback: CallbackQuery, session: AsyncSession):
     await UserDAO.set_admin(session, user_id, False)
     await callback.answer(f"❌ {user.full_name} adminlikdan olindi!", show_alert=True)
     await callback.message.edit_text("❌ Admin olib tashlandi.")
+
+
+# ============================================
+# MAJBURIY OBUNA BOSHQARUVI
+# ============================================
+
+async def _get_current_channels(session: AsyncSession) -> list:
+    db_channels = await SettingsDAO.get(session, "mandatory_channels", "")
+    if db_channels.strip():
+        return [ch.strip() for ch in db_channels.split(",") if ch.strip()]
+    return list(settings.mandatory_channels)
+
+
+@router.message(F.text == "📢 Majburiy Obuna", IsAdmin())
+async def admin_subscription_manage(message: Message, session: AsyncSession):
+    """Majburiy obuna kanallarini boshqarish"""
+    channels = await _get_current_channels(session)
+
+    text = (
+        "📢 <b>Majburiy Obuna Sozlamalari</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Foydalanuvchilar botdan foydalanishdan oldin quyidagi kanallarga a'zo bo'lishi shart:\n\n"
+    )
+
+    if channels:
+        for i, ch in enumerate(channels, 1):
+            text += f"{i}. 📢 <b>{ch}</b>\n"
+    else:
+        text += "<i>Hozircha majburiy kanallar belgilanmagan (Obuna talab qilinmaydi).</i>\n"
+
+    text += (
+        "\n━━━━━━━━━━━━━━━━━━\n"
+        "Kanal qo'shish yoki o'chirish uchun quyidagilardan foydalaning 👇"
+    )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Yangi kanal qo'shish", callback_data="adm_add_channel_start")
+
+    # Har bir kanalni o'chirish tugmasi
+    for i, ch in enumerate(channels):
+        builder.button(
+            text=f"❌ O'chirish: {ch}",
+            callback_data=f"adm_del_chan_{i}",
+        )
+
+    if channels:
+        builder.button(text="🗑 Barcha kanallarni tozalash", callback_data="adm_clear_channels")
+
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin"))
+
+    await message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data == "adm_add_channel_start", IsAdmin())
+async def admin_add_channel_start(callback: CallbackQuery, state: FSMContext):
+    """Kanal qo'shish — boshlanish"""
+    await state.set_state(AdminStates.add_mandatory_channel)
+    await callback.message.answer(
+        "📢 <b>Yangi majburiy kanal qo'shish</b>\n\n"
+        "Kanalning username ini (@ bilan) yoki havolasini yuboring:\n"
+        "Masalan: <code>@mening_kanalim</code> yoki <code>-1001234567890</code>\n\n"
+        "⚠️ <b>Muhim:</b> Bot ushbu kanalda <b>ADMIN</b> bo'lishi kerak, aks holda obunani tekshira olmaydi!",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.add_mandatory_channel, IsAdmin())
+async def admin_add_channel_save(message: Message, state: FSMContext, session: AsyncSession):
+    """Kanalni saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    raw_input = message.text.strip()
+    # Tozalash
+    if raw_input.startswith("https://t.me/"):
+        channel = "@" + raw_input.replace("https://t.me/", "").replace("/", "").strip()
+    elif raw_input.startswith("t.me/"):
+        channel = "@" + raw_input.replace("t.me/", "").replace("/", "").strip()
+    elif not raw_input.startswith("@") and not raw_input.startswith("-"):
+        channel = "@" + raw_input
+    else:
+        channel = raw_input
+
+    channels = await _get_current_channels(session)
+    if channel not in channels:
+        channels.append(channel)
+
+    new_val = ",".join(channels)
+    await SettingsDAO.set(session, "mandatory_channels", new_val, "Majburiy obuna kanallari")
+    await state.clear()
+
+    await message.answer(
+        f"✅ <b>Kanal muvaffaqiyatli qo'shildi!</b>\n\n"
+        f"📢 {channel}\n\n"
+        f"Endi yangi foydalanuvchilar botdan foydalanishdan oldin ushbu kanalga a'zo bo'lishi kerak bo'ladi.\n"
+        f"(Eslatma: Bot kanalda admin bo'lishi shart!)",
+        parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_del_chan_"), IsAdmin())
+async def admin_delete_channel(callback: CallbackQuery, session: AsyncSession):
+    """Kanalni o'chirish"""
+    idx = int(callback.data.split("_")[-1])
+    channels = await _get_current_channels(session)
+
+    if 0 <= idx < len(channels):
+        removed = channels.pop(idx)
+        new_val = ",".join(channels)
+        await SettingsDAO.set(session, "mandatory_channels", new_val, "Majburiy obuna kanallari")
+        await callback.answer(f"❌ {removed} kanali o'chirildi!", show_alert=True)
+    else:
+        await callback.answer("❌ Kanal topilmadi!", show_alert=True)
+
+    await callback.message.edit_text("✅ Kanal ro'yxatdan olib tashlandi.")
+
+
+@router.callback_query(F.data == "adm_clear_channels", IsAdmin())
+async def admin_clear_channels(callback: CallbackQuery, session: AsyncSession):
+    """Barcha kanallarni tozalash"""
+    await SettingsDAO.set(session, "mandatory_channels", "", "Majburiy obuna kanallari")
+    await callback.answer("🗑 Barcha majburiy kanallar tozalandi! Obuna o'chirildi.", show_alert=True)
+    await callback.message.edit_text("🗑 Barcha majburiy kanallar tozalandi. Obuna talab qilinmaydi.")

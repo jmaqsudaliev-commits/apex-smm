@@ -49,3 +49,6 @@ class AdminStates(StatesGroup):
 
     # Yangi admin qo'shish
     add_admin_id = State()
+
+    # Majburiy kanal qo'shish
+    add_mandatory_channel = State()

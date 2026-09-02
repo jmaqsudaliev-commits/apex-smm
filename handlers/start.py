@@ -12,11 +12,19 @@ from aiogram.enums import ChatMemberStatus
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
-from database.dao import UserDAO
+from database.dao import UserDAO, SettingsDAO
 from keyboards.reply import get_main_menu_kb
 from keyboards.inline import get_subscription_kb
 
 router = Router()
+
+
+async def get_mandatory_channels(session: AsyncSession) -> list:
+    """Majburiy obuna kanallarini olish (DB dan yoki config dan)"""
+    db_channels = await SettingsDAO.get(session, "mandatory_channels", "")
+    if db_channels.strip():
+        return [ch.strip() for ch in db_channels.split(",") if ch.strip()]
+    return settings.mandatory_channels
 
 
 @router.message(CommandStart())
@@ -48,10 +56,14 @@ async def cmd_start(
         referral_code_from=referral_code,
     )
 
+    # Adminlarni obuna tekshiruvidan ozod qilish
+    is_admin = telegram_id in settings.admin_ids or user.is_admin
+
     # Majburiy obuna tekshirish
-    if settings.mandatory_channels:
+    channels = await get_mandatory_channels(session)
+    if channels and not is_admin:
         not_subscribed = []
-        for channel in settings.mandatory_channels:
+        for channel in channels:
             if not channel:
                 continue
             try:
@@ -67,7 +79,7 @@ async def cmd_start(
         if not_subscribed:
             text = (
                 f"👋 <b>Assalomu alaykum, {full_name}!</b>\n\n"
-                f"Botdan foydalanish uchun quyidagi kanallarga obuna bo'ling:\n\n"
+                f"Botdan foydalanish uchun quyidagi kanal(lar)ga obuna bo'ling:\n\n"
             )
             for ch in not_subscribed:
                 text += f"📢 @{ch.replace('@', '')}\n"
@@ -117,12 +129,13 @@ async def check_subscription(callback: CallbackQuery, session: AsyncSession, bot
     """Majburiy obuna tekshirish tugmasi bosilganda"""
     telegram_id = callback.from_user.id
 
-    if not settings.mandatory_channels:
+    channels = await get_mandatory_channels(session)
+    if not channels:
         await callback.answer("✅ Obuna talab qilinmaydi!", show_alert=False)
         return
 
     not_subscribed = []
-    for channel in settings.mandatory_channels:
+    for channel in channels:
         if not channel:
             continue
         try:
