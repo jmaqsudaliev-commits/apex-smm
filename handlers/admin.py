@@ -126,6 +126,8 @@ async def admin_search_user(message: Message, state: FSMContext, session: AsyncS
 
     for user in users[:5]:
         ban_status = "🔴 Banlangan" if user.is_banned else "🟢 Faol"
+        is_user_adm = user.is_admin or (user.telegram_id in settings.admin_ids)
+        role_status = "👑 Admin" if is_user_adm else "👤 Foydalanuvchi"
         text = (
             f"👤 <b>{user.full_name}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
@@ -137,13 +139,13 @@ async def admin_search_user(message: Message, state: FSMContext, session: AsyncS
             f"💰 Balans: {format_price(user.balance)}\n"
             f"📦 Buyurtmalar: {user.total_orders}\n"
             f"💸 Sarflagan: {format_price(user.total_spent)}\n"
-            f"📋 Holat: {ban_status}\n"
+            f"📋 Holat: {ban_status} | <b>{role_status}</b>\n"
             f"📅 Ro'yxatdan: {format_datetime(user.created_at)}\n"
         )
         await message.answer(
             text,
             parse_mode="HTML",
-            reply_markup=get_admin_user_kb(user.id, user.is_banned),
+            reply_markup=get_admin_user_kb(user.id, user.is_banned, is_user_adm),
         )
 
     await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
@@ -220,9 +222,35 @@ async def admin_ban_user(callback: CallbackQuery, session: AsyncSession):
     status_text = "🔴 Banlandi" if new_status else "🟢 Ban olib tashlandi"
     await callback.answer(f"{status_text}: {user.full_name}", show_alert=True)
 
-    # Tugmalarni yangilash
+    is_user_adm = user.is_admin or (user.telegram_id in settings.admin_ids)
     await callback.message.edit_reply_markup(
-        reply_markup=get_admin_user_kb(user_id, new_status)
+        reply_markup=get_admin_user_kb(user_id, new_status, is_user_adm)
+    )
+
+
+@router.callback_query(F.data.startswith("adm_toggle_admin_"), IsAdmin())
+async def admin_toggle_admin(callback: CallbackQuery, session: AsyncSession):
+    """Foydalanuvchiga admin huquqini berish / olish"""
+    user_id = int(callback.data.split("_")[-1])
+    user = await UserDAO.get_by_id(session, user_id)
+
+    if not user:
+        await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+        return
+
+    # Asosiy .env dagi adminni o'zgartirib bo'lmaydi
+    if user.telegram_id in settings.admin_ids:
+        await callback.answer("⚠️ Bu asosiy Super Admin (.env), uni o'zgartirib bo'lmaydi!", show_alert=True)
+        return
+
+    new_admin_status = not user.is_admin
+    await UserDAO.set_admin(session, user_id, new_admin_status)
+
+    status_text = "👑 Admin etib tayinlandi!" if new_admin_status else "❌ Adminlikdan olindi!"
+    await callback.answer(f"{status_text} ({user.full_name})", show_alert=True)
+
+    await callback.message.edit_reply_markup(
+        reply_markup=get_admin_user_kb(user_id, user.is_banned, new_admin_status)
     )
 
 
@@ -1126,3 +1154,119 @@ async def back_to_admin(callback: CallbackQuery, state: FSMContext):
         parse_mode="HTML",
     )
     await callback.answer()
+
+
+# ============================================
+# ADMINLAR BOSHQARUVI
+# ============================================
+
+@router.message(F.text == "👑 Adminlar", IsAdmin())
+async def admin_list_manage(message: Message, session: AsyncSession):
+    """Barcha adminlarni ko'rish va boshqarish"""
+    db_admins = await UserDAO.get_all_admins(session)
+
+    text = (
+        "👑 <b>Bot Adminlari Ro'yxati</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "⭐ <b>Asosiy Super Adminlar (.env):</b>\n"
+    )
+    for tg_id in settings.admin_ids:
+        text += f"• <code>{tg_id}</code> (Super Admin)\n"
+
+    text += "\n👥 <b>Tayinlangan Adminlar:</b>\n"
+    if db_admins:
+        for adm in db_admins:
+            uname = f" (@{adm.username})" if adm.username else ""
+            text += f"• {adm.full_name}{uname} — <code>{adm.telegram_id}</code>\n"
+    else:
+        text += "<i>Hozircha qo'shimcha adminlar yo'q.</i>\n"
+
+    text += (
+        "\n━━━━━━━━━━━━━━━━━━\n"
+        "Yangi admin qo'shish uchun quyidagi tugmani bosing 👇"
+    )
+
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Yangi Admin qo'shish (ID orqali)", callback_data="adm_add_admin_start")
+
+    # Mavjud DB adminlarini o'chirish tugmalari
+    for adm in db_admins:
+        if adm.telegram_id not in settings.admin_ids:
+            builder.button(
+                text=f"❌ O'chirish: {adm.full_name[:12]}",
+                callback_data=f"adm_remove_admin_{adm.id}",
+            )
+    builder.adjust(1)
+    builder.row(InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin"))
+
+    await message.answer(text, parse_mode="HTML", reply_markup=builder.as_markup())
+
+
+@router.callback_query(F.data == "adm_add_admin_start", IsAdmin())
+async def admin_add_admin_start(callback: CallbackQuery, state: FSMContext):
+    """Yangi admin qo'shish — ID kiritish"""
+    await state.set_state(AdminStates.add_admin_id)
+    await callback.message.answer(
+        "👑 <b>Yangi Admin qo'shish</b>\n\n"
+        "Foydalanuvchining Telegram ID raqamini kiriting:\n"
+        "(Foydalanuvchi o'z ID sini @userinfobot dan bilib olishi mumkin)",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.add_admin_id, IsAdmin())
+async def admin_add_admin_save(message: Message, state: FSMContext, session: AsyncSession):
+    """Yangi adminni saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    text = message.text.strip()
+    if not text.isdigit():
+        await message.answer("❌ Iltimos, faqat raqamli Telegram ID kiriting (masalan: 123456789):")
+        return
+
+    target_tg_id = int(text)
+
+    # Foydalanuvchini olish yoki yaratish
+    user = await UserDAO.get_by_telegram_id(session, target_tg_id)
+    if not user:
+        user, _ = await UserDAO.get_or_create(
+            session=session,
+            telegram_id=target_tg_id,
+            full_name=f"Admin {target_tg_id}",
+        )
+
+    await UserDAO.set_admin(session, user.id, True)
+    await state.clear()
+
+    await message.answer(
+        f"✅ <b>Muvaffaqiyatli!</b>\n\n"
+        f"👤 {user.full_name} (ID: <code>{target_tg_id}</code>) bot administratori etib tayinlandi!\n\n"
+        f"U endi botda /admin buyrug'idan foydalana oladi.",
+        parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_remove_admin_"), IsAdmin())
+async def admin_remove_admin(callback: CallbackQuery, session: AsyncSession):
+    """Adminlikdan olish"""
+    user_id = int(callback.data.split("_")[-1])
+    user = await UserDAO.get_by_id(session, user_id)
+
+    if not user:
+        await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+        return
+
+    if user.telegram_id in settings.admin_ids:
+        await callback.answer("⚠️ Bu asosiy Super Admin (.env), uni o'chirib bo'lmaydi!", show_alert=True)
+        return
+
+    await UserDAO.set_admin(session, user_id, False)
+    await callback.answer(f"❌ {user.full_name} adminlikdan olindi!", show_alert=True)
+    await callback.message.edit_text("❌ Admin olib tashlandi.")

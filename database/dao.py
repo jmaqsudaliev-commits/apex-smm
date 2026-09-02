@@ -166,6 +166,31 @@ class UserDAO:
         result = await session.execute(stmt)
         return Decimal(str(result.scalar() or 0))
 
+    @staticmethod
+    async def set_admin(session: AsyncSession, user_id: int, is_admin: bool = True) -> None:
+        """Foydalanuvchiga admin huquqini berish yoki olish"""
+        stmt = update(User).where(User.id == user_id).values(is_admin=is_admin)
+        await session.execute(stmt)
+        await session.commit()
+
+    @staticmethod
+    async def is_admin(session: AsyncSession, telegram_id: int) -> bool:
+        """Foydalanuvchi admin ekanligini tekshirish"""
+        from config import settings
+        if telegram_id in settings.admin_ids:
+            return True
+        stmt = select(User.is_admin).where(User.telegram_id == telegram_id)
+        result = await session.execute(stmt)
+        val = result.scalar_one_or_none()
+        return bool(val)
+
+    @staticmethod
+    async def get_all_admins(session: AsyncSession) -> Sequence[User]:
+        """Barcha adminlarni olish"""
+        stmt = select(User).where(User.is_admin == True)
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
 
 # ============================================
 # CATEGORY DAO

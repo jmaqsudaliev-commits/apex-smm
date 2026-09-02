@@ -46,3 +46,6 @@ class AdminStates(StatesGroup):
 
     # To'lovni rad etish sababi
     reject_reason = State()
+
+    # Yangi admin qo'shish
+    add_admin_id = State()

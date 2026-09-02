@@ -206,13 +206,15 @@ def get_admin_service_edit_kb(service_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_admin_user_kb(user_id: int, is_banned: bool) -> InlineKeyboardMarkup:
+def get_admin_user_kb(user_id: int, is_banned: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
     """Admin — foydalanuvchi boshqaruvi"""
     builder = InlineKeyboardBuilder()
     builder.button(text="💰 Balans o'zgartirish", callback_data=f"adm_set_bal_{user_id}")
     ban_text = "🔓 Ban olish" if is_banned else "🔒 Ban berish"
     builder.button(text=ban_text, callback_data=f"adm_ban_{user_id}")
-    builder.adjust(2)
+    admin_text = "❌ Admindan olish" if is_admin else "👑 Admin qilish"
+    builder.button(text=admin_text, callback_data=f"adm_toggle_admin_{user_id}")
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
