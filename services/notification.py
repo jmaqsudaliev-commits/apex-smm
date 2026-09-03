@@ -40,13 +40,12 @@ async def notify_new_order(
     service_name: str = "",
     execution_time: str = "",
 ) -> bool:
-    """Yangi buyurtma haqida admin guruhga va adminlarga xabar yuborish"""
+    """Yangi buyurtma haqida faqat admin guruhga xabar yuborish"""
     group_id = await get_order_group_id()
     text = format_order_for_group(order, user, service_name, execution_time)
     kb = get_admin_order_kb(order.id)
-    sent_any = False
 
-    # 1. Guruhga yuborish (agar sozlangan bo'lsa)
+    # 1. Guruh sozlangan bo'lsa — FAQAT GURUHGA YUBORISH (shaxsiy chatga yuborilmaydi)
     if group_id and group_id != 0:
         try:
             await bot.send_message(
@@ -56,24 +55,24 @@ async def notify_new_order(
                 reply_markup=kb,
             )
             order_num = getattr(order, "order_number", None) or str(order.id)
-            logger.info(f"Buyurtma #{order_num} admin guruhga ({group_id}) yuborildi")
-            sent_any = True
+            logger.info(f"Buyurtma #{order_num} faqat admin guruhga ({group_id}) yuborildi")
+            return True
         except Exception as e:
             logger.error(f"Admin guruhga ({group_id}) xabar yuborishda xato: {e}")
 
-    # 2. Har bir adminga shaxsiy bot chatida ham yuborish
+    # 2. Agar guruh belgilanmagan bo'lsa — zaxira sifatida adminlarning o'ziga yuborish
+    sent_any = False
     for admin_id in settings.admin_ids:
-        if admin_id != group_id:
-            try:
-                await bot.send_message(
-                    chat_id=admin_id,
-                    text=text,
-                    parse_mode="HTML",
-                    reply_markup=kb,
-                )
-                sent_any = True
-            except Exception as e:
-                logger.error(f"Admin {admin_id} ga shaxsiy chatda xabar yuborishda xato: {e}")
+        try:
+            await bot.send_message(
+                chat_id=admin_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
+            sent_any = True
+        except Exception as e:
+            logger.error(f"Admin {admin_id} ga shaxsiy chatda xabar yuborishda xato: {e}")
 
     return sent_any
 
@@ -83,7 +82,7 @@ async def notify_new_payment(
     payment: Payment,
     user: User,
 ) -> bool:
-    """Yangi to'lov haqida admin guruhga va adminlarga xabar yuborish"""
+    """Yangi to'lov haqida faqat admin guruhga xabar yuborish"""
     group_id = await get_order_group_id()
 
     try:
@@ -104,13 +103,31 @@ async def notify_new_payment(
 
         kb = get_admin_payment_kb(payment.id)
 
-        target_chat_ids = set()
+        # 1. Guruh sozlangan bo'lsa — FAQAT GURUHGA YUBORISH (shaxsiy chatga yuborilmaydi)
         if group_id and group_id != 0:
-            target_chat_ids.add(group_id)
-        for adm_id in settings.admin_ids:
-            target_chat_ids.add(adm_id)
+            try:
+                if payment.screenshot_file_id:
+                    await bot.send_photo(
+                        chat_id=group_id,
+                        photo=payment.screenshot_file_id,
+                        caption=text,
+                        parse_mode="HTML",
+                        reply_markup=kb,
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=group_id,
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=kb,
+                    )
+                logger.info(f"To'lov #{payment.id} faqat admin guruhga ({group_id}) yuborildi")
+                return True
+            except Exception as e:
+                logger.error(f"Admin guruhga ({group_id}) to'lov yuborishda xato: {e}")
 
-        for target_id in target_chat_ids:
+        # 2. Agar guruh belgilanmagan bo'lsa — zaxira sifatida adminlarning o'ziga yuborish
+        for target_id in settings.admin_ids:
             try:
                 if payment.screenshot_file_id:
                     await bot.send_photo(
@@ -130,7 +147,6 @@ async def notify_new_payment(
             except Exception as e:
                 logger.error(f"To'lov xabarini {target_id} ga yuborishda xato: {e}")
 
-        logger.info(f"To'lov #{payment.id} yuborildi ({target_chat_ids})")
         return True
     except Exception as e:
         logger.error(f"Adminlarga to'lov xabari yuborishda umumiy xato: {e}")

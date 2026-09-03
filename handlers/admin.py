@@ -869,50 +869,15 @@ async def admin_back_services(callback: CallbackQuery, session: AsyncSession):
 # ============================================
 
 @router.message(F.text == "💳 To'lovlar", IsAdmin())
-async def admin_payments(message: Message, session: AsyncSession):
-    """Kutilayotgan to'lovlar ro'yxati"""
-    pending = await PaymentDAO.get_pending(session)
-
-    if not pending:
-        await message.answer(
-            "💳 <b>To'lovlar</b>\n\n✅ Kutilayotgan to'lovlar yo'q.",
-            parse_mode="HTML",
-        )
-        return
-
+async def admin_payments(message: Message):
+    """To'lovlar endi faqat guruhda boshqariladi"""
     await message.answer(
-        f"💳 <b>Kutilayotgan to'lovlar: {len(pending)} ta</b>",
+        "💳 <b>To'lovlar to'liq Adminlar Guruhiga yuboriladi!</b>\n\n"
+        "Guruhda har bir to'lov cheki tagidagi <b>[ ✅ Tasdiqlash ]</b> yoki <b>[ ❌ Rad etish ]</b> tugmalari orqali boshqariladi.\n\n"
+        "Admin guruhini sozlash uchun <b>'🏢 Adminlar Guruhi'</b> bo'limidan foydalaning.",
         parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
     )
-
-    for payment in pending[:10]:
-        user = await UserDAO.get_by_id(session, payment.user_id)
-        user_name = user.full_name if user else "Noma'lum"
-        user_tg = user.telegram_id if user else 0
-
-        text = (
-            f"💳 <b>To'lov #{payment.id}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 {user_name} (<code>{user_tg}</code>)\n"
-            f"💰 Summa: <b>{format_price(payment.amount)}</b>\n"
-            f"💳 Usul: {get_payment_method_text(payment.payment_method.value)}\n"
-            f"📅 {format_datetime(payment.created_at)}\n"
-        )
-
-        from keyboards.inline import get_admin_payment_kb
-        if payment.screenshot_file_id:
-            await message.answer_photo(
-                photo=payment.screenshot_file_id,
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=get_admin_payment_kb(payment.id),
-            )
-        else:
-            await message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=get_admin_payment_kb(payment.id),
-            )
 
 
 @router.callback_query(F.data.startswith("adm_pay_approve_"), IsAdmin())
@@ -1017,21 +982,15 @@ async def admin_reject_payment(callback: CallbackQuery, session: AsyncSession, b
 # ============================================
 
 @router.message(F.text == "📦 Buyurtmalar", IsAdmin())
-async def admin_orders(message: Message, session: AsyncSession):
-    """Buyurtmalar boshqaruvi menyusi"""
-    from keyboards.inline import get_admin_orders_menu_kb
-
-    pending = await OrderDAO.get_pending_orders(session)
-    total_orders = await OrderDAO.get_total_count(session)
-
-    text = (
-        "📦 <b>Buyurtmalar boshqaruvi</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        f"⏳ Kutilayotgan buyurtmalar: <b>{len(pending)} ta</b>\n"
-        f"📊 Jami barcha buyurtmalar: <b>{total_orders} ta</b>\n\n"
-        "Kerakli bo'limni tanlang 👇"
+async def admin_orders(message: Message):
+    """Buyurtmalar endi faqat guruhda boshqariladi"""
+    await message.answer(
+        "📦 <b>Buyurtmalar to'liq Adminlar Guruhiga yuboriladi!</b>\n\n"
+        "Guruhda har bir buyurtma tagidagi <b>[ ✅ Bajarildi ]</b>, <b>[ 🔄 Jarayonda ]</b> yoki <b>[ ❌ Bekor qilish ]</b> tugmalari orqali boshqariladi.\n\n"
+        "Admin guruhini sozlash uchun <b>'🏢 Adminlar Guruhi'</b> bo'limidan foydalaning.",
+        parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
     )
-    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_orders_menu_kb())
 
 
 @router.callback_query(F.data == "adm_orders_menu", IsAdmin())

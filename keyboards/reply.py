@@ -41,10 +41,6 @@ def get_admin_menu_kb() -> ReplyKeyboardMarkup:
             ],
             [
                 KeyboardButton(text="🛍 Xizmatlar boshqaruvi"),
-                KeyboardButton(text="📦 Buyurtmalar"),
-            ],
-            [
-                KeyboardButton(text="💳 To'lovlar"),
                 KeyboardButton(text="📢 Xabar yuborish"),
             ],
             [
