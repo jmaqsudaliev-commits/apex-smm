@@ -62,3 +62,6 @@ class AdminStates(StatesGroup):
 
     # Sozlamani tahrirlash
     edit_bot_setting = State()
+
+    # Buyurtmani bekor qilish sababi
+    cancel_order_reason = State()

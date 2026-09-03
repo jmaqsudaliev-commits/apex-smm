@@ -918,7 +918,7 @@ async def admin_process_order_search(message: Message, state: FSMContext, sessio
     await state.clear()
 
     user = await UserDAO.get_by_id(session, order.user_id)
-    service = order.service
+    service = await ServiceDAO.get_by_id(session, order.service_id)
     service_name = service.name if service else "—"
     exec_time = service.execution_time if service else "10 daqiqa - 24 soat"
     order_num = getattr(order, "order_number", None) or str(order.id)
@@ -959,72 +959,83 @@ async def admin_process_order_search(message: Message, state: FSMContext, sessio
 
 @router.callback_query(F.data.startswith("adm_complete_"), IsAdmin())
 async def admin_complete_order(callback: CallbackQuery, session: AsyncSession, bot: Bot):
-    """Buyurtmani bajarildi deb belgilash"""
+    """Buyurtmani bajarildi deb belgilash (qotishlarsiz tezkor javob)"""
+    await callback.answer("✅ Bajarilmoqda...")
     order_id = int(callback.data.split("_")[-1])
     order = await OrderDAO.update_status(session, order_id, OrderStatus.COMPLETED)
 
     if not order:
-        await callback.answer("❌ Buyurtma topilmadi!", show_alert=True)
+        await callback.message.answer("❌ Buyurtma topilmadi!")
         return
 
     user = await UserDAO.get_by_id(session, order.user_id)
-    service_name = order.service.name if order.service else "—"
+    service = await ServiceDAO.get_by_id(session, order.service_id)
+    service_name = service.name if service else "—"
     order_num = getattr(order, "order_number", None) or str(order.id)
 
     # Foydalanuvchiga xabar
     if user:
-        await notify_user(
-            bot=bot,
-            user_telegram_id=user.telegram_id,
-            text=(
-                f"✅ <b>Buyurtmangiz muvaffaqiyatli bajarildi!</b>\n\n"
-                f"📦 #{order_num} — {service_name}\n"
-                f"🔗 {order.target_link}\n"
-                f"📊 Miqdor: {format_number(order.quantity)}\n\n"
-                f"Xizmatimizdan foydalanganingiz uchun rahmat! 🙏"
-            ),
-        )
+        try:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text=(
+                    f"✅ <b>Buyurtmangiz muvaffaqiyatli bajarildi!</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🆔 Buyurtma raqami: <b>#{order_num}</b>\n"
+                    f"📦 Xizmat: {service_name}\n"
+                    f"🔗 {order.target_link}\n"
+                    f"📊 Miqdor: {format_number(order.quantity)}\n\n"
+                    f"Xizmatimizdan foydalanganingiz uchun rahmat! 🙏"
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Foydalanuvchiga bajarildi xabarini yuborishda xato: {e}")
 
-    await callback.message.edit_text(
-        f"✅ <b>BUYURTMA BAJARILDI</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📦 #{order_num} — {service_name}\n"
-        f"👤 Admin: {callback.from_user.full_name}\n"
-        f"📅 {format_datetime(order.updated_at)}",
-        parse_mode="HTML",
-    )
-    await callback.answer("✅ Bajarildi deb belgilandi!", show_alert=True)
+    try:
+        await callback.message.edit_text(
+            f"✅ <b>BUYURTMA BAJARILDI</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"📦 #{order_num} — {service_name}\n"
+            f"👤 Admin: {callback.from_user.full_name}\n"
+            f"📅 {format_datetime(order.updated_at)}",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("adm_progress_"), IsAdmin())
 async def admin_progress_order(callback: CallbackQuery, session: AsyncSession, bot: Bot):
     """Buyurtmani jarayonda deb belgilash"""
+    await callback.answer("🔄 Jarayonga o'tkazildi!")
     order_id = int(callback.data.split("_")[-1])
     order = await OrderDAO.update_status(session, order_id, OrderStatus.IN_PROGRESS)
 
     if not order:
-        await callback.answer("❌ Buyurtma topilmadi!", show_alert=True)
         return
 
     user = await UserDAO.get_by_id(session, order.user_id)
     order_num = getattr(order, "order_number", None) or str(order.id)
     if user:
-        await notify_user(
-            bot=bot,
-            user_telegram_id=user.telegram_id,
-            text=(
-                f"🔄 <b>Buyurtmangiz jarayonda!</b>\n\n"
-                f"📦 #{order_num}\n"
-                f"Tez orada bajariladi. Kuting..."
-            ),
-        )
-
-    await callback.answer("🔄 Jarayonga o'tkazildi!", show_alert=True)
+        try:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text=(
+                    f"🔄 <b>Buyurtmangiz jarayonda!</b>\n\n"
+                    f"📦 #{order_num}\n"
+                    f"Tez orada bajariladi. Kuting..."
+                ),
+            )
+        except Exception:
+            pass
 
 
 @router.callback_query(F.data.startswith("adm_cancel_"), IsAdmin())
-async def admin_cancel_order(callback: CallbackQuery, session: AsyncSession, bot: Bot):
-    """Buyurtmani bekor qilish (Atmen) va pulni qaytarish"""
+async def admin_cancel_order(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Buyurtmani bekor qilish — avval sababini so'rash"""
+    await callback.answer()
     order_id = int(callback.data.split("_")[-1])
     order = await OrderDAO.get_by_id(session, order_id)
 
@@ -1032,37 +1043,114 @@ async def admin_cancel_order(callback: CallbackQuery, session: AsyncSession, bot
         await callback.answer("❌ Buyurtma topilmadi!", show_alert=True)
         return
 
+    order_num = getattr(order, "order_number", None) or str(order.id)
+    await state.set_state(AdminStates.cancel_order_reason)
+    await state.update_data(
+        cancelling_order_id=order_id,
+        cancelling_order_number=order_num,
+        cancelling_message_id=callback.message.message_id,
+        cancelling_chat_id=callback.message.chat.id,
+    )
+
+    await callback.message.reply(
+        f"❌ <b>Buyurtma #{order_num} ni bekor qilish (Atmen)</b>\n\n"
+        f"Iltimos, bekor qilish <b>sababini yozing</b>:\n"
+        f"<i>(Ushbu sabab mijozga balansi qaytarilgani haqidagi xabarda ko'rsatiladi)</i>\n\n"
+        f"📌 Misol uchun:\n"
+        f"• <code>Havola noto'g'ri kiritilgan</code>\n"
+        f"• <code>Profil yopiq (privat) holatda</code>\n"
+        f"• <code>Telegram username topilmadi</code>\n\n"
+        f"Sababni kiriting yoki pastdagi ❌ Bekor qilish tugmasini bosing 👇",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+
+
+@router.message(AdminStates.cancel_order_reason, IsAdmin())
+async def admin_save_cancel_reason(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+    """Bekor qilish sababi qabul qilindi — pulni qaytarish va mijozga sababi bilan xabar berish"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("Buyurtmani bekor qilish jarayoni to'xtatildi.", reply_markup=get_admin_menu_kb())
+        return
+
+    reason = message.text.strip()
+    data = await state.get_data()
+    order_id = data.get("cancelling_order_id")
+
+    if not order_id:
+        await state.clear()
+        await message.answer("❌ Buyurtma ma'lumotlari topilmadi!", reply_markup=get_admin_menu_kb())
+        return
+
+    order = await OrderDAO.get_by_id(session, order_id)
+    if not order:
+        await state.clear()
+        await message.answer("❌ Buyurtma topilmadi!", reply_markup=get_admin_menu_kb())
+        return
+
     # Buyurtmani bekor qilish
     await OrderDAO.update_status(session, order_id, OrderStatus.CANCELLED)
 
     # Pulni qaytarish
     user = await UserDAO.update_balance(session, order.user_id, order.total_price)
-
-    service_name = order.service.name if order.service else "—"
+    service = await ServiceDAO.get_by_id(session, order.service_id)
+    service_name = service.name if service else "—"
     order_num = getattr(order, "order_number", None) or str(order.id)
 
-    # Foydalanuvchiga xabar
-    if user:
-        await notify_user(
-            bot=bot,
-            user_telegram_id=user.telegram_id,
-            text=(
-                f"❌ <b>Buyurtmangiz bekor qilindi (Atmen)!</b>\n\n"
-                f"📦 #{order_num} — {service_name}\n"
-                f"💰 {format_price(order.total_price)} balansingizga qaytarildi.\n"
-                f"💵 Yangi balans: <b>{format_price(user.balance)}</b>"
-            ),
-        )
+    await state.clear()
 
-    await callback.message.edit_text(
-        f"❌ <b>BUYURTMA BEKOR QILINDI (ATMEN)</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"📦 #{order_num} — {service_name}\n"
-        f"💰 {format_price(order.total_price)} qaytarildi\n"
-        f"👤 Admin: {callback.from_user.full_name}",
+    # Foydalanuvchiga sababi bilan xabar
+    if user:
+        try:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text=(
+                    f"❌ <b>Buyurtmangiz bekor qilindi (Atmen)!</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🆔 Buyurtma raqami: <b>#{order_num}</b>\n"
+                    f"📦 Xizmat: <b>{service_name}</b>\n"
+                    f"💰 Qaytarilgan summa: <b>{format_price(order.total_price)}</b>\n"
+                    f"💵 Yangi balansingiz: <b>{format_price(user.balance)}</b>\n\n"
+                    f"⚠️ <b>Bekor qilish sababi:</b>\n"
+                    f"<i>{reason}</i>\n\n"
+                    f"To'langan summa balansingizga to'liq qaytarildi."
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Mijozga bekor qilish xabarini yuborishda xato: {e}")
+
+    # Asl xabarni tahrirlash (agar mumkin bo'lsa)
+    orig_msg_id = data.get("cancelling_message_id")
+    orig_chat_id = data.get("cancelling_chat_id")
+    if orig_msg_id and orig_chat_id:
+        try:
+            await bot.edit_message_text(
+                chat_id=orig_chat_id,
+                message_id=orig_msg_id,
+                text=(
+                    f"❌ <b>BUYURTMA BEKOR QILINDI (ATMEN)</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"📦 #{order_num} — {service_name}\n"
+                    f"👤 Admin: {message.from_user.full_name}\n"
+                    f"📝 Sabab: <i>{reason}</i>\n"
+                    f"💰 Qaytarildi: {format_price(order.total_price)}"
+                ),
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+    await message.answer(
+        f"✅ <b>Buyurtma #{order_num} bekor qilindi!</b>\n\n"
+        f"👤 Mijoz: <b>{user.full_name if user else '—'}</b>\n"
+        f"💰 Qaytarildi: <b>{format_price(order.total_price)}</b>\n"
+        f"📝 Ko'rsatilgan sabab: <i>{reason}</i>\n\n"
+        f"Mijozga bekor qilish sababi va qaytarilgan balans haqida bildirishnoma yuborildi. ✅",
         parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
     )
-    await callback.answer("❌ Bekor qilindi (Atmen), pul qaytarildi!", show_alert=True)
 
 
 # ============================================

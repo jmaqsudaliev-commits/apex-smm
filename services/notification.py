@@ -40,7 +40,7 @@ async def notify_new_order(
     service_name: str = "",
     execution_time: str = "",
 ) -> bool:
-    """Yangi buyurtma haqida admin guruhga yoki adminlarga xabar yuborish"""
+    """Yangi buyurtma haqida admin guruhga va adminlarga xabar yuborish"""
     group_id = await get_order_group_id()
     text = format_order_for_group(order, user, service_name, execution_time)
     kb = get_admin_order_kb(order.id)
@@ -59,11 +59,11 @@ async def notify_new_order(
             logger.info(f"Buyurtma #{order_num} admin guruhga ({group_id}) yuborildi")
             sent_any = True
         except Exception as e:
-            logger.error(f"Admin guruhga xabar yuborishda xato: {e}")
+            logger.error(f"Admin guruhga ({group_id}) xabar yuborishda xato: {e}")
 
-    # 2. Agar guruh sozlanmagan bo'lsa yoki qo'shimcha ravishda — adminlarga to'g'ridan-to'g'ri yuborish
-    if not sent_any:
-        for admin_id in settings.admin_ids:
+    # 2. Har bir adminga shaxsiy bot chatida ham yuborish
+    for admin_id in settings.admin_ids:
+        if admin_id != group_id:
             try:
                 await bot.send_message(
                     chat_id=admin_id,
@@ -72,8 +72,8 @@ async def notify_new_order(
                     reply_markup=kb,
                 )
                 sent_any = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Admin {admin_id} ga shaxsiy chatda xabar yuborishda xato: {e}")
 
     return sent_any
 
@@ -83,7 +83,7 @@ async def notify_new_payment(
     payment: Payment,
     user: User,
 ) -> bool:
-    """Yangi to'lov haqida admin guruhga yoki to'g'ridan-to'g'ri adminlarga xabar yuborish"""
+    """Yangi to'lov haqida admin guruhga va adminlarga xabar yuborish"""
     group_id = await get_order_group_id()
 
     try:
@@ -104,7 +104,11 @@ async def notify_new_payment(
 
         kb = get_admin_payment_kb(payment.id)
 
-        target_chat_ids = [group_id] if (group_id and group_id != 0) else list(settings.admin_ids)
+        target_chat_ids = set()
+        if group_id and group_id != 0:
+            target_chat_ids.add(group_id)
+        for adm_id in settings.admin_ids:
+            target_chat_ids.add(adm_id)
 
         for target_id in target_chat_ids:
             try:
