@@ -613,7 +613,7 @@ async def seed_categories_and_services(session: AsyncSession):
     if existing:
         return
 
-    # Kategoriyalar
+    # Kategoriyalar (o'chirilmaydi, doimiy saqlanadi)
     categories_data = [
         {"name": "📸 Instagram", "emoji": "📸", "sort_order": 1},
         {"name": "🎵 TikTok", "emoji": "🎵", "sort_order": 2},
@@ -627,96 +627,8 @@ async def seed_categories_and_services(session: AsyncSession):
         {"name": "💵 USDT", "emoji": "💵", "sort_order": 10},
     ]
 
-    services_map = {
-        "Instagram": [
-            {"name": "👥 Instagram Followers", "price_per_1000": Decimal("15000"), "min_quantity": 100, "max_quantity": 500000},
-            {"name": "❤️ Instagram Likes", "price_per_1000": Decimal("8000"), "min_quantity": 50, "max_quantity": 100000},
-            {"name": "👁 Instagram Views", "price_per_1000": Decimal("3000"), "min_quantity": 100, "max_quantity": 1000000},
-            {"name": "💬 Instagram Comments", "price_per_1000": Decimal("50000"), "min_quantity": 10, "max_quantity": 10000},
-            {"name": "📨 Instagram Story Views", "price_per_1000": Decimal("5000"), "min_quantity": 100, "max_quantity": 100000},
-            {"name": "💾 Instagram Saves", "price_per_1000": Decimal("12000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "📤 Instagram Shares", "price_per_1000": Decimal("10000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "🔄 Instagram Reels Views", "price_per_1000": Decimal("4000"), "min_quantity": 100, "max_quantity": 1000000},
-        ],
-        "TikTok": [
-            {"name": "👥 TikTok Followers", "price_per_1000": Decimal("20000"), "min_quantity": 100, "max_quantity": 500000},
-            {"name": "❤️ TikTok Likes", "price_per_1000": Decimal("10000"), "min_quantity": 50, "max_quantity": 100000},
-            {"name": "👁 TikTok Views", "price_per_1000": Decimal("2000"), "min_quantity": 500, "max_quantity": 5000000},
-            {"name": "🔄 TikTok Shares", "price_per_1000": Decimal("15000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "💬 TikTok Comments", "price_per_1000": Decimal("45000"), "min_quantity": 10, "max_quantity": 10000},
-            {"name": "💾 TikTok Saves", "price_per_1000": Decimal("12000"), "min_quantity": 50, "max_quantity": 50000},
-        ],
-        "YouTube": [
-            {"name": "👥 YouTube Subscribers", "price_per_1000": Decimal("50000"), "min_quantity": 100, "max_quantity": 100000},
-            {"name": "👁 YouTube Views", "price_per_1000": Decimal("15000"), "min_quantity": 500, "max_quantity": 1000000},
-            {"name": "👍 YouTube Likes", "price_per_1000": Decimal("20000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "⏱ YouTube Watch Time (soat)", "price_per_1000": Decimal("100000"), "min_quantity": 100, "max_quantity": 10000},
-            {"name": "💬 YouTube Comments", "price_per_1000": Decimal("60000"), "min_quantity": 10, "max_quantity": 5000},
-        ],
-        "Telegram": [
-            {"name": "👥 Telegram Members", "price_per_1000": Decimal("25000"), "min_quantity": 100, "max_quantity": 200000},
-            {"name": "👁 Telegram Post Views", "price_per_1000": Decimal("3000"), "min_quantity": 100, "max_quantity": 500000},
-            {"name": "🔄 Telegram Reactions", "price_per_1000": Decimal("10000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "📨 Telegram Shares", "price_per_1000": Decimal("15000"), "min_quantity": 50, "max_quantity": 50000},
-            {"name": "💬 Telegram Comments", "price_per_1000": Decimal("40000"), "min_quantity": 10, "max_quantity": 10000},
-        ],
-        "Stars": [
-            {"name": "⭐ Telegram Stars (50 dona)", "price_per_1000": Decimal("75000"), "min_quantity": 1, "max_quantity": 1, "description": "50 dona Telegram Stars"},
-            {"name": "⭐ Telegram Stars (100 dona)", "price_per_1000": Decimal("150000"), "min_quantity": 1, "max_quantity": 1, "description": "100 dona Telegram Stars"},
-            {"name": "⭐ Telegram Stars (250 dona)", "price_per_1000": Decimal("350000"), "min_quantity": 1, "max_quantity": 1, "description": "250 dona Telegram Stars"},
-            {"name": "⭐ Telegram Stars (500 dona)", "price_per_1000": Decimal("650000"), "min_quantity": 1, "max_quantity": 1, "description": "500 dona Telegram Stars"},
-            {"name": "⭐ Telegram Stars (1000 dona)", "price_per_1000": Decimal("1200000"), "min_quantity": 1, "max_quantity": 1, "description": "1000 dona Telegram Stars"},
-        ],
-        "Premium": [
-            {"name": "💎 Telegram Premium (1 oy)", "price_per_1000": Decimal("35000000"), "min_quantity": 1, "max_quantity": 1, "description": "1 oylik Telegram Premium obuna"},
-            {"name": "💎 Telegram Premium (3 oy)", "price_per_1000": Decimal("90000000"), "min_quantity": 1, "max_quantity": 1, "description": "3 oylik Telegram Premium obuna"},
-            {"name": "💎 Telegram Premium (6 oy)", "price_per_1000": Decimal("160000000"), "min_quantity": 1, "max_quantity": 1, "description": "6 oylik Telegram Premium obuna"},
-            {"name": "💎 Telegram Premium (12 oy)", "price_per_1000": Decimal("280000000"), "min_quantity": 1, "max_quantity": 1, "description": "12 oylik Telegram Premium obuna"},
-        ],
-        "NFT": [
-            {"name": "🖼 Telegram Username NFT", "price_per_1000": Decimal("500000000"), "min_quantity": 1, "max_quantity": 1, "description": "Telegram username NFT sotib olish xizmati"},
-            {"name": "🖼 Telegram Nomer NFT", "price_per_1000": Decimal("300000000"), "min_quantity": 1, "max_quantity": 1, "description": "Telegram +888 virtual nomer NFT"},
-            {"name": "🖼 Maxsus Emoji Pack", "price_per_1000": Decimal("50000000"), "min_quantity": 1, "max_quantity": 1, "description": "Custom emoji to'plami yaratish"},
-        ],
-        "Sovg'alar": [
-            {"name": "🎁 Telegram Gift (oddiy)", "price_per_1000": Decimal("15000000"), "min_quantity": 1, "max_quantity": 1, "description": "Oddiy Telegram sovg'a"},
-            {"name": "🎁 Telegram Gift (noyob)", "price_per_1000": Decimal("50000000"), "min_quantity": 1, "max_quantity": 1, "description": "Noyob Telegram sovg'a"},
-            {"name": "🎁 Telegram Gift (premium)", "price_per_1000": Decimal("150000000"), "min_quantity": 1, "max_quantity": 1, "description": "Premium Telegram sovg'a"},
-            {"name": "🎂 Tug'ilgan kun tabrik xizmati", "price_per_1000": Decimal("25000000"), "min_quantity": 1, "max_quantity": 1, "description": "Maxsus tug'ilgan kun tabrigi + sovg'a"},
-        ],
-        "TON": [
-            {"name": "💠 TON Coin (10 TON)", "price_per_1000": Decimal("25000000"), "min_quantity": 1, "max_quantity": 1, "description": "10 TON coin sotib olish"},
-            {"name": "💠 TON Coin (50 TON)", "price_per_1000": Decimal("120000000"), "min_quantity": 1, "max_quantity": 1, "description": "50 TON coin sotib olish"},
-            {"name": "💠 TON Coin (100 TON)", "price_per_1000": Decimal("230000000"), "min_quantity": 1, "max_quantity": 1, "description": "100 TON coin sotib olish"},
-            {"name": "💠 TON Coin (500 TON)", "price_per_1000": Decimal("1100000000"), "min_quantity": 1, "max_quantity": 1, "description": "500 TON coin sotib olish"},
-        ],
-        "USDT": [
-            {"name": "💵 USDT (10$)", "price_per_1000": Decimal("13000000"), "min_quantity": 1, "max_quantity": 1, "description": "10 USDT sotib olish (TRC-20)"},
-            {"name": "💵 USDT (50$)", "price_per_1000": Decimal("64000000"), "min_quantity": 1, "max_quantity": 1, "description": "50 USDT sotib olish (TRC-20)"},
-            {"name": "💵 USDT (100$)", "price_per_1000": Decimal("126000000"), "min_quantity": 1, "max_quantity": 1, "description": "100 USDT sotib olish (TRC-20)"},
-            {"name": "💵 USDT (500$)", "price_per_1000": Decimal("620000000"), "min_quantity": 1, "max_quantity": 1, "description": "500 USDT sotib olish (TRC-20)"},
-            {"name": "💵 USDT (1000$)", "price_per_1000": Decimal("1230000000"), "min_quantity": 1, "max_quantity": 1, "description": "1000 USDT sotib olish (TRC-20)"},
-        ],
-    }
-
     for cat_data in categories_data:
-        cat = await CategoryDAO.create(session, **cat_data)
-
-        # Kategoriyaga mos xizmatlarni topish
-        cat_key = None
-        for key in services_map:
-            if key in cat_data["name"]:
-                cat_key = key
-                break
-
-        if cat_key and cat_key in services_map:
-            for i, svc_data in enumerate(services_map[cat_key]):
-                await ServiceDAO.create(
-                    session,
-                    category_id=cat.id,
-                    sort_order=i,
-                    **svc_data,
-                )
+        await CategoryDAO.create(session, **cat_data)
 
 
 # ============================================

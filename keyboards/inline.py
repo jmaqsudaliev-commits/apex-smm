@@ -62,11 +62,12 @@ def get_services_kb(services, category_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_service_detail_kb(service_id: int) -> InlineKeyboardMarkup:
-    """Xizmat tafsilotlari — buyurtma berish"""
+def get_service_detail_kb(service_id: int, category_id: int = None) -> InlineKeyboardMarkup:
+    """Xizmat tafsilotlari — mahsulot haqida ko'rib, tagidan buyurtma berish"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="🛒 Buyurtma berish", callback_data=f"order_{service_id}")
-    builder.button(text="🔙 Orqaga", callback_data="back_services")
+    builder.button(text="🛍 Buyurtma berish", callback_data=f"order_{service_id}")
+    back_data = f"cat_{category_id}" if category_id else "back_categories"
+    builder.button(text="🔙 Orqaga", callback_data=back_data)
     builder.adjust(1)
     return builder.as_markup()
 

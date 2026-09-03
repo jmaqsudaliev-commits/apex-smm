@@ -70,13 +70,16 @@ async def show_category_services(callback: CallbackQuery, session: AsyncSession)
 
 @router.callback_query(F.data.startswith("svc_"))
 async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
-    """Xizmat tanlanganda — tafsilotlar"""
+    """Xizmat tanlanganda — mahsulot haqida to'liq tafsilotlar va tagida buyurtma tugmasi"""
     service_id = int(callback.data.split("_")[1])
     service = await ServiceDAO.get_by_id(session, service_id)
 
     if not service:
         await callback.answer("❌ Xizmat topilmadi!", show_alert=True)
         return
+
+    category = await CategoryDAO.get_by_id(session, service.category_id)
+    cat_name = category.name if category else ""
 
     # Narx formatlash
     if service.min_quantity == 1 and service.max_quantity == 1:
@@ -91,11 +94,27 @@ async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
         f"📦 <b>{service.name}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
     )
-    if service.description:
-        text += f"📝 {service.description}\n\n"
+
+    # 1. Mahsulot haqida ma'lumot
+    if service.description and service.description.strip():
+        text += f"ℹ️ <b>Mahsulot haqida:</b>\n{service.description.strip()}\n\n"
+    elif "nft" in cat_name.lower() or "collectibles" in cat_name.lower():
+        text += (
+            "ℹ️ <b>Mahsulot haqida:</b>\n"
+            "Ushbu NFT / Collectible xariddan so'ng siz ko'rsatgan TON hamyonga yoki Telegram akkauntingizga to'liq o'tkazib beriladi.\n\n"
+        )
+
+    # 2. Telegram Premium 1 oylik ogohlantirish
+    is_prem_1m = "premium" in service.name.lower() and any(x in service.name.lower() for x in ["1 oy", "1-oy", "1oy", "bir oy"])
+    if is_prem_1m:
+        text += (
+            "⚠️ <b>MUHIM ESLATMA:</b>\n"
+            "Telegram Premium 1 oylik obuna <b>faqat akkauntga kirish orqali</b> ulab beriladi!\n\n"
+        )
+
     text += (
         f"💰 Narx: <b>{price_text}</b>\n"
-        f"📊 Miqdor: {qty_text}\n"
+        f"📊 Miqdor: <b>{qty_text}</b>\n"
         f"⏱ Bajarilish oralig'i: <b>{exec_time}</b>\n\n"
         f"🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇"
     )
@@ -104,7 +123,7 @@ async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
     await callback.message.edit_text(
         text,
         parse_mode="HTML",
-        reply_markup=get_service_detail_kb(service_id),
+        reply_markup=get_service_detail_kb(service_id, service.category_id),
     )
     await callback.answer()
 
@@ -113,7 +132,6 @@ async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
 async def back_to_services(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
     """Xizmatlar ro'yxatiga qaytish"""
     await state.clear()
-    # Kategoriyalarga qaytamiz
     categories = await CategoryDAO.get_all_active(session)
     await callback.message.edit_text(
         "🛒 <b>Xizmatlar katalogi</b>\n\n"
@@ -130,7 +148,7 @@ async def back_to_services(callback: CallbackQuery, session: AsyncSession, state
 
 @router.callback_query(F.data.startswith("order_"))
 async def start_order(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
-    """Buyurtma berish — 1-qadam: havola so'rash"""
+    """Buyurtma berish — 1-qadam: havola yoki kerakli ma'lumotni so'rash"""
     service_id = int(callback.data.split("_")[1])
     service = await ServiceDAO.get_by_id(session, service_id)
 
@@ -138,15 +156,20 @@ async def start_order(callback: CallbackQuery, session: AsyncSession, state: FSM
         await callback.answer("❌ Xizmat topilmadi!", show_alert=True)
         return
 
+    category = await CategoryDAO.get_by_id(session, service.category_id)
+    cat_name = category.name if category else ""
+
     # Foydalanuvchi balansini tekshirish
     user = await UserDAO.get_by_telegram_id(session, callback.from_user.id)
     if not user:
         await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
         return
 
+    is_prem_1m = "premium" in service.name.lower() and any(x in service.name.lower() for x in ["1 oy", "1-oy", "1oy", "bir oy"])
+    is_nft = "nft" in cat_name.lower() or "collectibles" in cat_name.lower() or "nft" in service.name.lower()
+
     # Bir martalik xizmat (Premium, NFT, sovg'a va boshqalar)
     if service.min_quantity == 1 and service.max_quantity == 1:
-        # Narx = price_per_1000 (to'liq narx)
         total_price = service.price_per_1000
 
         if user.balance < total_price:
@@ -168,18 +191,35 @@ async def start_order(callback: CallbackQuery, session: AsyncSession, state: FSM
             is_fixed=True,
         )
 
-        await callback.message.edit_text(
-            f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
-            f"💰 Narx: <b>{format_price(total_price)}</b>\n"
-            f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
-            f"🔗 Iltimos, tegishli havola yoki ma'lumotni yuboring:\n"
-            f"(Username, telefon raqam, yoki havola)",
-            parse_mode="HTML",
-        )
-        await callback.message.answer(
-            "🔗 Havola yoki ma'lumotni kiriting yoki ❌ Bekor qilish:",
-            reply_markup=get_cancel_kb(),
-        )
+        if is_prem_1m:
+            prompt_text = (
+                f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
+                f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+                f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
+                f"⚠️ <b>DIQQAT:</b> Telegram Premium 1 oylik obuna <b>faqat akkauntga kirish orqali</b> ulanadi!\n\n"
+                f"🔗 Iltimos, Telegram <b>telefon raqamingiz</b> yoki <b>@username</b>ingizni yuboring:\n"
+                f"(Buyurtmadan so'ng admin siz bilan akkauntga kirish kodi orqali bog'lanadi)"
+            )
+            input_prompt = "🔗 Telegram raqam yoki @username ni yuboring:"
+        elif is_nft:
+            prompt_text = (
+                f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
+                f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+                f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
+                f"🔗 Iltimos, qabul qiluvchi <b>TON hamyon manzili</b> yoki <b>Telegram @username</b>ingizni yuboring:"
+            )
+            input_prompt = "🔗 TON hamyon yoki @username ni yuboring:"
+        else:
+            prompt_text = (
+                f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
+                f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+                f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
+                f"🔗 Iltimos, tegishli havola yoki ma'lumotni yuboring:"
+            )
+            input_prompt = "🔗 Havola yoki ma'lumotni kiriting:"
+
+        await callback.message.edit_text(prompt_text, parse_mode="HTML")
+        await callback.message.answer(input_prompt, reply_markup=get_cancel_kb())
     else:
         # Oddiy xizmat — havola va miqdor so'raladi
         await state.set_state(OrderStates.waiting_for_link)

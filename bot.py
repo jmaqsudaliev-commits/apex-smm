@@ -92,10 +92,23 @@ async def on_startup(bot: Bot):
     logger.info("📦 Ma'lumotlar bazasi jadvallari tekshirilmoqda...")
     await create_tables()
 
-    # Boshlang'ich kategoriyalar, xizmatlar va sozlamalarni yaratish
+    # Boshlang'ich kategoriyalar va sozlamalarni yaratish
     async with async_session() as session:
         await seed_settings(session)
         await seed_categories_and_services(session)
+
+        # Bir martalik tozalash: admin barcha xizmatlarni o'zi qo'shishi uchun eski xizmatlarni tozalash
+        cleaned = await SettingsDAO.get(session, "cleaned_default_services", "0")
+        if cleaned != "1":
+            from database.models import Service, Order
+            from sqlalchemy import delete
+            try:
+                await session.execute(delete(Order))
+                await session.execute(delete(Service))
+                await SettingsDAO.set(session, "cleaned_default_services", "1", "Eski xizmatlar tozalandi")
+                logger.info("🗑 Eski xizmatlar to'liq tozalandi (admin o'zi kiritadi)")
+            except Exception as e:
+                logger.warning(f"Xizmatlarni tozalashda xato: {e}")
     logger.info("✅ Baza boshlang'ich ma'lumotlari tayyorlandi")
 
     await set_bot_commands(bot)
