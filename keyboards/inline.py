@@ -126,8 +126,15 @@ def get_admin_order_manage_kb(order_id: int) -> InlineKeyboardMarkup:
 
 
 # ============================================
-# TO'LOV
+# BALANS VA TO'LOV
 # ============================================
+
+def get_balance_kb() -> InlineKeyboardMarkup:
+    """Balans ko'rsatilgandagi tugma"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💳 Balansni to'ldirish", callback_data="topup_balance")
+    return builder.as_markup()
+
 
 def get_payment_methods_kb() -> InlineKeyboardMarkup:
     """To'lov usullari"""
@@ -135,8 +142,20 @@ def get_payment_methods_kb() -> InlineKeyboardMarkup:
     builder.button(text="💳 Click", callback_data="pay_method_click")
     builder.button(text="💳 Payme", callback_data="pay_method_payme")
     builder.button(text="⭐ Telegram Stars", callback_data="pay_method_stars")
-    builder.button(text="❌ Bekor qilish", callback_data="cancel_payment")
-    builder.adjust(2)
+    builder.button(text="🔙 Orqaga", callback_data="back_to_balance")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def get_admin_order_group_kb(has_group: bool = False) -> InlineKeyboardMarkup:
+    """Adminlar guruhi boshqaruv tugmalari"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Guruh ID sini o'rnatish", callback_data="adm_set_group_id")
+    if has_group:
+        builder.button(text="🧪 Guruhga test xabar yuborish", callback_data="adm_test_group_msg")
+        builder.button(text="❌ Guruhni o'chirish", callback_data="adm_clear_group_id")
+    builder.button(text="🔙 Admin panel", callback_data="back_admin")
+    builder.adjust(1)
     return builder.as_markup()
 
 

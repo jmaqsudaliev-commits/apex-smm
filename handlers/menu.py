@@ -55,11 +55,11 @@ async def show_balance(message: Message, session: AsyncSession):
         f"💳 Balansni to'ldirish uchun quyidagi tugmani bosing 👇"
     )
 
-    from keyboards.inline import get_payment_methods_kb
+    from keyboards.inline import get_balance_kb
     await message.answer(
         text,
         parse_mode="HTML",
-        reply_markup=get_payment_methods_kb(),
+        reply_markup=get_balance_kb(),
     )
 
 

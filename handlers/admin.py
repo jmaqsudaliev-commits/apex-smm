@@ -1425,6 +1425,128 @@ async def admin_remove_admin(callback: CallbackQuery, session: AsyncSession):
 
 
 # ============================================
+# ADMINLAR GURUHI (BUYURTMALAR VA TO'LOVLAR)
+# ============================================
+
+@router.message(F.text == "🏢 Adminlar Guruhi", IsAdmin())
+async def admin_group_manage(message: Message, session: AsyncSession):
+    """Adminlar / Buyurtmalar guruhini alohida boshqarish"""
+    from keyboards.inline import get_admin_order_group_kb
+    from services.notification import get_order_group_id
+
+    group_id = await get_order_group_id()
+    has_group = bool(group_id and group_id != 0)
+
+    status_text = f"<code>{group_id}</code> ✅" if has_group else "<i>Belgilanmagan (Xabarlar adminlarga to'g'ridan-to'g'ri boradi)</i> ⚠️"
+
+    text = (
+        "🏢 <b>Buyurtmalar va To'lovlar Guruhi (Admin Guruhi)</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"📌 Hozirgi guruh ID: {status_text}\n\n"
+        "ℹ️ <b>Bu nima uchun kerak?</b>\n"
+        "Yangi buyurtmalar va to'lov bildirishnomalari shu guruhga yuboriladi va adminlar guruhdan turib bitta tugma bilan buyurtma va to'lovlarni tasdiqlashi mumkin.\n\n"
+        "Guruhni sozlash uchun quyidagi tugmalardan foydalaning 👇"
+    )
+    await message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_admin_order_group_kb(has_group=has_group),
+    )
+
+
+@router.callback_query(F.data == "adm_set_group_id", IsAdmin())
+async def admin_set_group_id_start(callback: CallbackQuery, state: FSMContext):
+    """Guruh ID sini kiritish — boshlanish"""
+    await state.set_state(AdminStates.set_order_group_id)
+    await callback.message.answer(
+        "🏢 <b>Guruh ID sini kiriting:</b>\n\n"
+        "Masalan: <code>-1001234567890</code>\n\n"
+        "📌 <b>Qanday bilish mumkin?</b>\n"
+        "1. Botni guruhingizga qo'shing va <b>ADMIN</b> qiling.\n"
+        "2. Guruh ID sini bilish uchun @userinfobot yoki @raw_data_bot ni guruhga qo'shing.\n"
+        "3. Olingan ID raqamini (odatda <code>-100...</code> bilan boshlanadi) shu yerga yuboring:",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.set_order_group_id, IsAdmin())
+async def admin_save_group_id(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+    """Guruh ID sini saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    text_val = message.text.strip()
+    try:
+        group_id = int(text_val)
+    except ValueError:
+        await message.answer("❌ Iltimos, faqat to'g'ri sonli ID kiriting (masalan: <code>-1001234567890</code>):", parse_mode="HTML")
+        return
+
+    await SettingsDAO.set(session, "order_group_id", str(group_id), "Buyurtmalar guruhi ID si")
+    await state.clear()
+
+    # Guruhga test xabar yuborish
+    test_ok = False
+    try:
+        await bot.send_message(
+            chat_id=group_id,
+            text="🔔 <b>SMM Bot bildirishnomasi:</b>\nUshbu guruh buyurtmalar va to'lovlar uchun muvaffaqiyatli ulandi! ✅",
+            parse_mode="HTML",
+        )
+        test_ok = True
+    except Exception:
+        pass
+
+    result_text = (
+        f"✅ <b>Admin guruhi muvaffaqiyatli saqlandi!</b>\n\n"
+        f"🏢 Guruh ID: <code>{group_id}</code>\n"
+    )
+    if test_ok:
+        result_text += "📬 Guruhga test xabari muvaffaqiyatli yuborildi! ✅"
+    else:
+        result_text += "⚠️ <i>Eslatma: Guruhga test xabar yuborilmadi. Bot guruhga admin qilib qo'shilganini tekshiring!</i>"
+
+    await message.answer(result_text, parse_mode="HTML", reply_markup=get_admin_menu_kb())
+
+
+@router.callback_query(F.data == "adm_test_group_msg", IsAdmin())
+async def admin_test_group_msg(callback: CallbackQuery, session: AsyncSession, bot: Bot):
+    """Guruhga test xabar yuborish"""
+    from services.notification import get_order_group_id
+    group_id = await get_order_group_id()
+
+    if not group_id or group_id == 0:
+        await callback.answer("⚠️ Guruh sozlanmagan!", show_alert=True)
+        return
+
+    try:
+        await bot.send_message(
+            chat_id=group_id,
+            text="🔔 <b>Test xabari:</b>\nSMM Bot admin guruhi bilan aloqa to'liq ishlayapti! ✅",
+            parse_mode="HTML",
+        )
+        await callback.answer("✅ Guruhga test xabari muvaffaqiyatli bordi!", show_alert=True)
+    except Exception as e:
+        await callback.answer(f"❌ Xato: Bot guruhda admin emas yoki ID noto'g'ri ({e})", show_alert=True)
+
+
+@router.callback_query(F.data == "adm_clear_group_id", IsAdmin())
+async def admin_clear_group_id(callback: CallbackQuery, session: AsyncSession):
+    """Guruhni o'chirish"""
+    await SettingsDAO.set(session, "order_group_id", "0", "Buyurtmalar guruhi ID si")
+    await callback.answer("🗑 Guruh sozlamasi o'chirildi! Endi xabarlar shaxsiy adminlarga boradi.", show_alert=True)
+    await callback.message.edit_text(
+        "🏢 <b>Adminlar Guruhi</b>\n\n"
+        "Guruh sozlamasi tozalandi. Yangi buyurtmalar to'g'ridan-to'g'ri adminlarning o'ziga yuboriladi.",
+        parse_mode="HTML",
+    )
+
+
+# ============================================
 # MAJBURIY OBUNA BOSHQARUVI
 # ============================================
 

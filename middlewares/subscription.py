@@ -42,9 +42,18 @@ class SubscriptionMiddleware(BaseMiddleware):
         if not user:
             return await handler(event, data)
 
-        # Admin larni o'tkazib yuborish
+        # Adminlarni o'tkazib yuborish (.env va bazadagi barcha adminlar)
         if user.id in settings.admin_ids:
             return await handler(event, data)
+
+        session = data.get("session")
+        if session:
+            from database.dao import UserDAO
+            try:
+                if await UserDAO.is_admin(session, user.id):
+                    return await handler(event, data)
+            except Exception:
+                pass
 
         # Kanallarni olish (Avval DB dan, bo'lmasa config dan)
         channels_list = []

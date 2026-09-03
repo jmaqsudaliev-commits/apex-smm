@@ -48,11 +48,14 @@ def get_admin_menu_kb() -> ReplyKeyboardMarkup:
                 KeyboardButton(text="📢 Xabar yuborish"),
             ],
             [
-                KeyboardButton(text="⚙️ Sozlamalar"),
+                KeyboardButton(text="🏢 Adminlar Guruhi"),
                 KeyboardButton(text="📢 Majburiy Obuna"),
             ],
             [
                 KeyboardButton(text="👑 Adminlar"),
+                KeyboardButton(text="⚙️ Sozlamalar"),
+            ],
+            [
                 KeyboardButton(text="🔙 Asosiy menyu"),
             ],
         ],

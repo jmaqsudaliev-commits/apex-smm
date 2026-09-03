@@ -56,3 +56,6 @@ class AdminStates(StatesGroup):
 
     # Majburiy kanal qo'shish
     add_mandatory_channel = State()
+
+    # Buyurtmalar guruhi sozlash
+    set_order_group_id = State()

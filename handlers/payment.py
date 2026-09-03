@@ -29,6 +29,48 @@ router = Router()
 # TO'LOV USULI TANLASH
 # ============================================
 
+@router.callback_query(F.data == "topup_balance")
+async def show_topup_methods(callback: CallbackQuery):
+    """Balansni to'ldirish tugmasi bosilganda to'lov usullarini ko'rsatish"""
+    text = (
+        "💳 <b>Hisobni to'ldirish</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "Quyidagi to'lov usullaridan birini tanlang 👇"
+    )
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_payment_methods_kb(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "back_to_balance")
+async def back_to_balance(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
+    """Orqaga — balans xabariga qaytish"""
+    await state.clear()
+    user = await UserDAO.get_by_telegram_id(session, callback.from_user.id)
+    if not user:
+        await callback.answer()
+        return
+
+    text = (
+        f"💰 <b>Sizning balansingiz</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"💵 Asosiy balans: <b>{format_price(user.balance)}</b>\n"
+        f"📊 Jami sarflangan: {format_price(user.total_spent)}\n"
+        f"📦 Jami buyurtmalar: {format_number(user.total_orders)}\n\n"
+        f"Hisobingizni to'ldirish uchun quyidagi tugmani bosing 👇"
+    )
+    from keyboards.inline import get_balance_kb
+    await callback.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_balance_kb(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "pay_method_click")
 async def pay_click(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
     """Click to'lov"""
