@@ -150,15 +150,35 @@ def get_payment_methods_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_admin_order_group_kb(has_group: bool = False) -> InlineKeyboardMarkup:
-    """Adminlar guruhi boshqaruv tugmalari"""
+def get_admin_order_group_kb(detected_groups: list = None, active_group_id: int = 0) -> InlineKeyboardMarkup:
+    """Adminlar guruhi boshqaruv va tanlash tugmalari"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="➕ Guruh ID sini o'rnatish", callback_data="adm_set_group_id")
-    if has_group:
-        builder.button(text="🧪 Guruhga test xabar yuborish", callback_data="adm_test_group_msg")
-        builder.button(text="❌ Guruhni o'chirish", callback_data="adm_clear_group_id")
-    builder.button(text="🔙 Admin panel", callback_data="back_admin")
-    builder.adjust(1)
+
+    # Aniqlangan guruhlarni tanlash tugmalari qilib chiqarish
+    if detected_groups:
+        for grp in detected_groups:
+            grp_id = grp.get("id")
+            title = grp.get("title", "Guruh")[:22]
+            is_active = (grp_id == active_group_id)
+            icon = "✅" if is_active else "🔘"
+            suffix = " (Ulangan)" if is_active else ""
+            builder.button(
+                text=f"{icon} {title}{suffix}",
+                callback_data=f"adm_select_grp_{grp_id}",
+            )
+        builder.adjust(1)
+
+    # Qo'shimcha amallar
+    sub_rows = [
+        InlineKeyboardButton(text="🔄 Yangilash", callback_data="adm_refresh_groups"),
+        InlineKeyboardButton(text="✏️ ID kiritish", callback_data="adm_set_group_id"),
+    ]
+    if active_group_id and active_group_id != 0:
+        sub_rows.insert(1, InlineKeyboardButton(text="🧪 Test xabar", callback_data="adm_test_group_msg"))
+        sub_rows.append(InlineKeyboardButton(text="🗑 Uzish", callback_data="adm_clear_group_id"))
+
+    builder.row(*sub_rows)
+    builder.row(InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin"))
     return builder.as_markup()
 
 

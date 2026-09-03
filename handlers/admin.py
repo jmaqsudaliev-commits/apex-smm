@@ -11,10 +11,11 @@ Funksiyalar:
 """
 
 import asyncio
+import json
 from decimal import Decimal
 
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, ChatMemberUpdated
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
@@ -1732,46 +1733,188 @@ async def admin_remove_admin(callback: CallbackQuery, session: AsyncSession):
 
 
 # ============================================
-# ADMINLAR GURUHI (BUYURTMALAR VA TO'LOVLAR)
+# ADMINLAR GURUHI (ANIQLASH, TANLASH VA BOSHQARISH)
 # ============================================
 
-@router.message(F.text == "🏢 Adminlar Guruhi", IsAdmin())
-async def admin_group_manage(message: Message, session: AsyncSession):
-    """Adminlar / Buyurtmalar guruhini alohida boshqarish"""
+async def register_detected_group(session: AsyncSession, group_id: int, title: str, username: str = None):
+    """Bot a'zo bo'lgan guruhni xotiraga saqlash"""
+    raw = await SettingsDAO.get(session, "known_admin_groups", "[]")
+    try:
+        groups = json.loads(raw)
+        if not isinstance(groups, list):
+            groups = []
+    except Exception:
+        groups = []
+
+    updated = False
+    for g in groups:
+        if g.get("id") == group_id:
+            g["title"] = title or g.get("title", f"Guruh {group_id}")
+            if username:
+                g["username"] = username
+            updated = True
+            break
+
+    if not updated:
+        groups.append({
+            "id": group_id,
+            "title": title or f"Guruh {group_id}",
+            "username": username or "",
+        })
+
+    await SettingsDAO.set(session, "known_admin_groups", json.dumps(groups, ensure_ascii=False), "Bot ulangan guruhlar ro'yxati")
+
+
+async def get_detected_groups(session: AsyncSession) -> list:
+    """Bot aniqlagan guruhlar ro'yxatini olish"""
+    raw = await SettingsDAO.get(session, "known_admin_groups", "[]")
+    try:
+        groups = json.loads(raw)
+        return groups if isinstance(groups, list) else []
+    except Exception:
+        return []
+
+
+@router.my_chat_member()
+async def bot_group_membership_update(update: ChatMemberUpdated, session: AsyncSession):
+    """Bot guruhga a'zo yoki admin bo'lib qo'shilganda avtomatik guruhni saqlash"""
+    chat = update.chat
+    if chat.type in ("group", "supergroup"):
+        if update.new_chat_member.status in ("administrator", "member"):
+            await register_detected_group(session, chat.id, chat.title, chat.username)
+            try:
+                await update.bot.send_message(
+                    chat_id=chat.id,
+                    text=(
+                        f"🔔 <b>SMM Bot guruhga muvaffaqiyatli ulandi!</b>\n\n"
+                        f"🏢 Guruh: <b>{chat.title}</b>\n"
+                        f"ID: <code>{chat.id}</code>\n\n"
+                        f"Ushbu guruhni buyurtmalar va to'lovlar uchun asosiy qilish uchun:\n"
+                        f"Guruhda <code>/setgroup</code> deb yozing yoki botdagi Admin Panel -> <b>'🏢 Adminlar Guruhi'</b> bo'limidan bitta bosish bilan tanlang! ✅"
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}), F.text.startswith("/setgroup"))
+async def group_setgroup_command(message: Message, session: AsyncSession):
+    """Guruhda /setgroup buyrug'i yuborilganda uni darhol buyurtmalar guruhi etib belgilash"""
+    chat = message.chat
+    await register_detected_group(session, chat.id, chat.title, chat.username)
+    await SettingsDAO.set(session, "order_group_id", str(chat.id), "Buyurtmalar guruhi ID si")
+
+    await message.reply(
+        f"✅ <b>Ushbu guruh Buyurtmalar va To'lovlar guruhi etib belgilandi!</b>\n\n"
+        f"🏢 Guruh: <b>{chat.title}</b>\n"
+        f"ID: <code>{chat.id}</code>\n\n"
+        f"Barcha yangi buyurtmalar va to'lov bildirishnomalari endi shu yerga yuboriladi! 🚀",
+        parse_mode="HTML",
+    )
+
+
+@router.message(F.chat.type.in_({"group", "supergroup"}))
+async def group_auto_detect_message(message: Message, session: AsyncSession):
+    """Guruhda yozilgan har qanday xabardan guruhni avtomatik xotiraga olish"""
+    chat = message.chat
+    if chat and chat.type in ("group", "supergroup"):
+        await register_detected_group(session, chat.id, chat.title, chat.username)
+
+
+async def _render_order_group_panel(target_msg, session: AsyncSession, is_edit: bool = False):
     from keyboards.inline import get_admin_order_group_kb
     from services.notification import get_order_group_id
 
-    group_id = await get_order_group_id()
-    has_group = bool(group_id and group_id != 0)
+    active_group_id = await get_order_group_id()
+    detected_groups = await get_detected_groups(session)
 
-    status_text = f"<code>{group_id}</code> ✅" if has_group else "<i>Belgilanmagan (Xabarlar adminlarga to'g'ridan-to'g'ri boradi)</i> ⚠️"
+    active_title = "Belgilanmagan (Xabarlar shaxsiy chatga boradi)"
+    for g in detected_groups:
+        if g.get("id") == active_group_id:
+            active_title = g.get("title", f"Guruh {active_group_id}")
+            break
+    if active_group_id and active_group_id != 0 and active_title.startswith("Belgilanmagan"):
+        active_title = f"Guruh ID: {active_group_id}"
+
+    status_icon = "✅" if (active_group_id and active_group_id != 0) else "⚠️"
 
     text = (
-        "🏢 <b>Buyurtmalar va To'lovlar Guruhi (Admin Guruhi)</b>\n"
+        "🏢 <b>Buyurtmalar va To'lovlar Guruhi</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
-        f"📌 Hozirgi guruh ID: {status_text}\n\n"
-        "ℹ️ <b>Bu nima uchun kerak?</b>\n"
-        "Yangi buyurtmalar va to'lov bildirishnomalari shu guruhga yuboriladi va adminlar guruhdan turib bitta tugma bilan buyurtma va to'lovlarni tasdiqlashi mumkin.\n\n"
-        "Guruhni sozlash uchun quyidagi tugmalardan foydalaning 👇"
+        f"📌 <b>Hozirgi ulangan guruh:</b>\n"
+        f"{status_icon} <b>{active_title}</b> (<code>{active_group_id or 0}</code>)\n\n"
     )
-    await message.answer(
-        text,
-        parse_mode="HTML",
-        reply_markup=get_admin_order_group_kb(has_group=has_group),
-    )
+
+    if detected_groups:
+        text += (
+            "📋 <b>Bot a'zo bo'lgan guruhlar ro'yxati:</b>\n"
+            "Buyurtmalar tushishi kerak bo'lgan guruh ustiga bosing 👇\n"
+        )
+    else:
+        text += (
+            "ℹ️ <b>Guruhni ulash juda oson:</b>\n"
+            "1. Botni adminlar guruhingizga qo'shing va <b>ADMIN</b> qiling.\n"
+            "2. Guruhda <code>/setgroup</code> deb yozing yoki istalgan xabar yuboring.\n"
+            "3. Bot guruhni darhol tanib oladi va bu yerda tanlash tugmasi paydo bo'ladi!\n"
+        )
+
+    kb = get_admin_order_group_kb(detected_groups=detected_groups, active_group_id=active_group_id)
+
+    if is_edit:
+        try:
+            await target_msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            await target_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await target_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.message(F.text == "🏢 Adminlar Guruhi", IsAdmin())
+async def admin_group_manage(message: Message, session: AsyncSession):
+    """Adminlar / Buyurtmalar guruhini tanlash va boshqarish"""
+    await _render_order_group_panel(message, session, is_edit=False)
+
+
+@router.callback_query(F.data.startswith("adm_select_grp_"), IsAdmin())
+async def admin_select_group_cb(callback: CallbackQuery, session: AsyncSession, bot: Bot):
+    """Aniqlangan guruhlar ro'yxatidan guruhni tanlash"""
+    await callback.answer()
+    group_id = int(callback.data.replace("adm_select_grp_", ""))
+
+    await SettingsDAO.set(session, "order_group_id", str(group_id), "Buyurtmalar guruhi ID si")
+
+    grp_title = ""
+    try:
+        chat = await bot.get_chat(group_id)
+        grp_title = chat.title or ""
+        await bot.send_message(
+            chat_id=group_id,
+            text="🔔 <b>SMM Bot bildirishnomasi:</b>\nUshbu guruh muvaffaqiyatli asosiy Buyurtmalar va To'lovlar guruhi etib tanlandi! ✅",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+    await callback.answer(f"✅ Guruh tanlandi: {grp_title or group_id}!", show_alert=True)
+    await _render_order_group_panel(callback.message, session, is_edit=True)
+
+
+@router.callback_query(F.data == "adm_refresh_groups", IsAdmin())
+async def admin_refresh_groups_cb(callback: CallbackQuery, session: AsyncSession):
+    """Guruhlar ro'yxatini yangilash"""
+    await callback.answer("🔄 Guruhlar ro'yxati yangilandi!")
+    await _render_order_group_panel(callback.message, session, is_edit=True)
 
 
 @router.callback_query(F.data == "adm_set_group_id", IsAdmin())
 async def admin_set_group_id_start(callback: CallbackQuery, state: FSMContext):
-    """Guruh ID sini kiritish — boshlanish"""
+    """Guruh ID sini qo'lda kiritish — boshlanish"""
     await state.set_state(AdminStates.set_order_group_id)
     await callback.message.answer(
         "🏢 <b>Guruh ID sini kiriting:</b>\n\n"
         "Masalan: <code>-1001234567890</code>\n\n"
-        "📌 <b>Qanday bilish mumkin?</b>\n"
-        "1. Botni guruhingizga qo'shing va <b>ADMIN</b> qiling.\n"
-        "2. Guruh ID sini bilish uchun @userinfobot yoki @raw_data_bot ni guruhga qo'shing.\n"
-        "3. Olingan ID raqamini (odatda <code>-100...</code> bilan boshlanadi) shu yerga yuboring:",
+        "Yoki oddiygina bot bor guruhda <code>/setgroup</code> buyrug'ini yuborsangiz o'zi ulanadi!",
         parse_mode="HTML",
         reply_markup=get_cancel_kb(),
     )
@@ -1780,7 +1923,7 @@ async def admin_set_group_id_start(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AdminStates.set_order_group_id, IsAdmin())
 async def admin_save_group_id(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
-    """Guruh ID sini saqlash"""
+    """Guruh ID sini qo'lda saqlash"""
     if message.text == "❌ Bekor qilish":
         await state.clear()
         await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
@@ -1796,9 +1939,10 @@ async def admin_save_group_id(message: Message, state: FSMContext, session: Asyn
     await SettingsDAO.set(session, "order_group_id", str(group_id), "Buyurtmalar guruhi ID si")
     await state.clear()
 
-    # Guruhga test xabar yuborish
     test_ok = False
     try:
+        chat = await bot.get_chat(group_id)
+        await register_detected_group(session, group_id, chat.title, chat.username)
         await bot.send_message(
             chat_id=group_id,
             text="🔔 <b>SMM Bot bildirishnomasi:</b>\nUshbu guruh buyurtmalar va to'lovlar uchun muvaffaqiyatli ulandi! ✅",
@@ -1808,10 +1952,7 @@ async def admin_save_group_id(message: Message, state: FSMContext, session: Asyn
     except Exception:
         pass
 
-    result_text = (
-        f"✅ <b>Admin guruhi muvaffaqiyatli saqlandi!</b>\n\n"
-        f"🏢 Guruh ID: <code>{group_id}</code>\n"
-    )
+    result_text = f"✅ <b>Admin guruhi muvaffaqiyatli saqlandi!</b>\n\n🏢 Guruh ID: <code>{group_id}</code>\n"
     if test_ok:
         result_text += "📬 Guruhga test xabari muvaffaqiyatli yuborildi! ✅"
     else:
@@ -1846,11 +1987,7 @@ async def admin_clear_group_id(callback: CallbackQuery, session: AsyncSession):
     """Guruhni o'chirish"""
     await SettingsDAO.set(session, "order_group_id", "0", "Buyurtmalar guruhi ID si")
     await callback.answer("🗑 Guruh sozlamasi o'chirildi! Endi xabarlar shaxsiy adminlarga boradi.", show_alert=True)
-    await callback.message.edit_text(
-        "🏢 <b>Adminlar Guruhi</b>\n\n"
-        "Guruh sozlamasi tozalandi. Yangi buyurtmalar to'g'ridan-to'g'ri adminlarning o'ziga yuboriladi.",
-        parse_mode="HTML",
-    )
+    await _render_order_group_panel(callback.message, session, is_edit=True)
 
 
 # ============================================
