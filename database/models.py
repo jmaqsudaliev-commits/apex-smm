@@ -147,6 +147,9 @@ class Service(Base):
     api_service_id: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, comment="Tashqi SMM API dagi service ID"
     )
+    execution_time: Mapped[Optional[str]] = mapped_column(
+        String(100), default="10 daqiqa - 24 soat", nullable=True, comment="Bajarilish vaqt oralig'i"
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(
@@ -172,6 +175,9 @@ class Order(Base):
     __tablename__ = "orders"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    order_number: Mapped[Optional[str]] = mapped_column(
+        String(50), unique=True, nullable=True, comment="Takrorlanmas unikal buyurtma raqami"
+    )
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
@@ -202,13 +208,14 @@ class Order(Base):
     service: Mapped[Optional["Service"]] = relationship("Service", back_populates="orders")
 
     __table_args__ = (
+        Index("ix_orders_order_number", "order_number"),
         Index("ix_orders_user", "user_id"),
         Index("ix_orders_status", "status"),
         Index("ix_orders_created", "created_at"),
     )
 
     def __repr__(self):
-        return f"<Order id={self.id} user={self.user_id} status={self.status}>"
+        return f"<Order id={self.id} num={self.order_number} user={self.user_id} status={self.status}>"
 
 
 class Payment(Base):

@@ -88,9 +88,11 @@ async def show_my_orders(message: Message, session: AsyncSession):
 
     for order in orders:
         service_name = ""
+        exec_time = ""
         if order.service:
             service_name = order.service.name
-        text += format_order_text(order, service_name) + "\n"
+            exec_time = order.service.execution_time or ""
+        text += format_order_text(order, service_name, exec_time) + "\n"
 
     await message.answer(text, parse_mode="HTML")
 

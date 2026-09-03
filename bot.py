@@ -9,6 +9,7 @@ Arxitektura:
 - 1M+ foydalanuvchiga mo'ljallangan asinxron ishlov
 """
 
+import os
 import sys
 import asyncio
 from loguru import logger

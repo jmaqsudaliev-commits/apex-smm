@@ -274,6 +274,7 @@ class ServiceDAO:
         min_quantity: int = 100,
         max_quantity: int = 100000,
         description: Optional[str] = None,
+        execution_time: Optional[str] = "10 daqiqa - 24 soat",
         api_service_id: Optional[int] = None,
         sort_order: int = 0,
     ) -> Service:
@@ -284,6 +285,7 @@ class ServiceDAO:
             min_quantity=min_quantity,
             max_quantity=max_quantity,
             description=description,
+            execution_time=execution_time or "10 daqiqa - 24 soat",
             api_service_id=api_service_id,
             sort_order=sort_order,
         )
@@ -330,6 +332,18 @@ class OrderDAO:
     """Buyurtma operatsiyalari"""
 
     @staticmethod
+    async def generate_unique_order_number(session: AsyncSession) -> str:
+        """Har bir buyurtmaga takrorlanmas unikal raqam berish (masalan: 6 xonali)"""
+        for _ in range(20):
+            candidate = str(secrets.randbelow(900000) + 100000)
+            stmt = select(Order.id).where(Order.order_number == candidate)
+            result = await session.execute(stmt)
+            if not result.scalar_one_or_none():
+                return candidate
+        import time
+        return f"{int(time.time()) % 1000000:06d}"
+
+    @staticmethod
     async def create(
         session: AsyncSession,
         user_id: int,
@@ -338,7 +352,9 @@ class OrderDAO:
         quantity: int,
         total_price: Decimal,
     ) -> Order:
+        order_num = await OrderDAO.generate_unique_order_number(session)
         order = Order(
+            order_number=order_num,
             user_id=user_id,
             service_id=service_id,
             target_link=target_link,
@@ -368,6 +384,30 @@ class OrderDAO:
         stmt = select(Order).where(Order.id == order_id)
         result = await session.execute(stmt)
         return result.scalar_one_or_none()
+
+    @staticmethod
+    async def get_by_order_number_or_id(session: AsyncSession, query_str: str) -> Optional[Order]:
+        """Buyurtma raqami yoki ID orqali buyurtmani topish"""
+        clean = query_str.strip().replace("#", "").replace("ORD-", "").replace("ord-", "").strip()
+        if not clean:
+            return None
+
+        # 1. order_number bo'yicha tekshiramiz
+        stmt = select(Order).where(Order.order_number == clean)
+        result = await session.execute(stmt)
+        order = result.scalar_one_or_none()
+        if order:
+            return order
+
+        # 2. Raqam bo'lsa, id bo'yicha tekshiramiz
+        if clean.isdigit():
+            stmt = select(Order).where(Order.id == int(clean))
+            result = await session.execute(stmt)
+            order = result.scalar_one_or_none()
+            if order:
+                return order
+
+        return None
 
     @staticmethod
     async def get_user_orders(

@@ -38,28 +38,44 @@ async def notify_new_order(
     order: Order,
     user: User,
     service_name: str = "",
+    execution_time: str = "",
 ) -> bool:
-    """Yangi buyurtma haqida admin guruhga xabar yuborish"""
+    """Yangi buyurtma haqida admin guruhga yoki adminlarga xabar yuborish"""
     group_id = await get_order_group_id()
-    if not group_id:
-        logger.warning("ORDER_GROUP_ID sozlanmagan — xabar yuborilmadi")
-        return False
+    text = format_order_for_group(order, user, service_name, execution_time)
+    kb = get_admin_order_kb(order.id)
+    sent_any = False
 
-    try:
-        text = format_order_for_group(order, user, service_name)
-        kb = get_admin_order_kb(order.id)
+    # 1. Guruhga yuborish (agar sozlangan bo'lsa)
+    if group_id and group_id != 0:
+        try:
+            await bot.send_message(
+                chat_id=group_id,
+                text=text,
+                parse_mode="HTML",
+                reply_markup=kb,
+            )
+            order_num = getattr(order, "order_number", None) or str(order.id)
+            logger.info(f"Buyurtma #{order_num} admin guruhga ({group_id}) yuborildi")
+            sent_any = True
+        except Exception as e:
+            logger.error(f"Admin guruhga xabar yuborishda xato: {e}")
 
-        await bot.send_message(
-            chat_id=group_id,
-            text=text,
-            parse_mode="HTML",
-            reply_markup=kb,
-        )
-        logger.info(f"Buyurtma #{order.id} admin guruhga ({group_id}) yuborildi")
-        return True
-    except Exception as e:
-        logger.error(f"Admin guruhga xabar yuborishda xato: {e}")
-        return False
+    # 2. Agar guruh sozlanmagan bo'lsa yoki qo'shimcha ravishda — adminlarga to'g'ridan-to'g'ri yuborish
+    if not sent_any:
+        for admin_id in settings.admin_ids:
+            try:
+                await bot.send_message(
+                    chat_id=admin_id,
+                    text=text,
+                    parse_mode="HTML",
+                    reply_markup=kb,
+                )
+                sent_any = True
+            except Exception:
+                pass
+
+    return sent_any
 
 
 async def notify_new_payment(

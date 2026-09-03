@@ -511,8 +511,8 @@ async def admin_add_service_min(message: Message, state: FSMContext):
 
 
 @router.message(AdminStates.add_service_max, IsAdmin())
-async def admin_add_service_max(message: Message, state: FSMContext, session: AsyncSession):
-    """Yangi xizmat — maximum va saqlash"""
+async def admin_add_service_max(message: Message, state: FSMContext):
+    """Yangi xizmat — maximum va vaqt oralig'i so'rash"""
     if message.text == "❌ Bekor qilish":
         await state.clear()
         await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
@@ -524,6 +524,32 @@ async def admin_add_service_max(message: Message, state: FSMContext, session: As
         await message.answer("❌ Raqam kiriting:")
         return
 
+    await state.update_data(new_service_max=max_qty)
+    await state.set_state(AdminStates.add_service_execution_time)
+
+    from keyboards.reply import get_skip_kb
+    await message.answer(
+        "⏱ <b>Bajarilish vaqti oralig'ini kiriting:</b>\n"
+        "Masalan: <code>15 daqiqa - 24 soat</code> yoki <code>1-3 soat</code>\n\n"
+        "Standart qiymat (10 daqiqa - 24 soat) qoldirish uchun ⏩ O'tkazib yuborish ni bosing:",
+        parse_mode="HTML",
+        reply_markup=get_skip_kb(),
+    )
+
+
+@router.message(AdminStates.add_service_execution_time, IsAdmin())
+async def admin_add_service_time(message: Message, state: FSMContext, session: AsyncSession):
+    """Yangi xizmat — vaqt oralig'i va saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    if message.text == "⏩ O'tkazib yuborish":
+        exec_time = "10 daqiqa - 24 soat"
+    else:
+        exec_time = message.text.strip()
+
     data = await state.get_data()
     await state.clear()
 
@@ -533,14 +559,17 @@ async def admin_add_service_max(message: Message, state: FSMContext, session: As
         name=data["new_service_name"],
         price_per_1000=Decimal(data["new_service_price"]),
         min_quantity=data["new_service_min"],
-        max_quantity=max_qty,
+        max_quantity=data["new_service_max"],
+        execution_time=exec_time,
     )
 
     await message.answer(
-        f"✅ Xizmat qo'shildi!\n\n"
+        f"✅ <b>Xizmat muvaffaqiyatli qo'shildi!</b>\n\n"
         f"📦 {service.name}\n"
         f"💰 Narx: {format_price(service.price_per_1000)} / 1000\n"
-        f"📊 Miqdor: {format_number(service.min_quantity)} — {format_number(service.max_quantity)}",
+        f"📊 Miqdor: {format_number(service.min_quantity)} — {format_number(service.max_quantity)}\n"
+        f"⏱ Bajarilish oralig'i: <b>{service.execution_time}</b>",
+        parse_mode="HTML",
         reply_markup=get_admin_menu_kb(),
     )
 
@@ -765,47 +794,167 @@ async def admin_reject_payment(callback: CallbackQuery, session: AsyncSession, b
 # BUYURTMALAR BOSHQARUVI (GURUHDAN)
 # ============================================
 
+# ============================================
+# BUYURTMALAR BOSHQARUVI
+# ============================================
+
 @router.message(F.text == "📦 Buyurtmalar", IsAdmin())
 async def admin_orders(message: Message, session: AsyncSession):
-    """Kutilayotgan buyurtmalar"""
-    from utils.helpers import format_order_text
+    """Buyurtmalar boshqaruvi menyusi"""
+    from keyboards.inline import get_admin_orders_menu_kb
 
+    pending = await OrderDAO.get_pending_orders(session)
+    total_orders = await OrderDAO.get_total_count(session)
+
+    text = (
+        "📦 <b>Buyurtmalar boshqaruvi</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"⏳ Kutilayotgan buyurtmalar: <b>{len(pending)} ta</b>\n"
+        f"📊 Jami barcha buyurtmalar: <b>{total_orders} ta</b>\n\n"
+        "Kerakli bo'limni tanlang 👇"
+    )
+    await message.answer(text, parse_mode="HTML", reply_markup=get_admin_orders_menu_kb())
+
+
+@router.callback_query(F.data == "adm_orders_menu", IsAdmin())
+async def admin_orders_menu_callback(callback: CallbackQuery, session: AsyncSession, state: FSMContext):
+    """Buyurtmalar menyusiga qaytish"""
+    await state.clear()
+    from keyboards.inline import get_admin_orders_menu_kb
+
+    pending = await OrderDAO.get_pending_orders(session)
+    total_orders = await OrderDAO.get_total_count(session)
+
+    text = (
+        "📦 <b>Buyurtmalar boshqaruvi</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        f"⏳ Kutilayotgan buyurtmalar: <b>{len(pending)} ta</b>\n"
+        f"📊 Jami barcha buyurtmalar: <b>{total_orders} ta</b>\n\n"
+        "Kerakli bo'limni tanlang 👇"
+    )
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=get_admin_orders_menu_kb())
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=get_admin_orders_menu_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "adm_orders_pending", IsAdmin())
+async def admin_orders_pending_list(callback: CallbackQuery, session: AsyncSession):
+    """Kutilayotgan buyurtmalar ro'yxati"""
     pending = await OrderDAO.get_pending_orders(session)
 
     if not pending:
-        await message.answer(
-            "📦 <b>Buyurtmalar</b>\n\n✅ Kutilayotgan buyurtmalar yo'q.",
-            parse_mode="HTML",
-        )
+        await callback.answer("✅ Kutilayotgan buyurtmalar yo'q!", show_alert=True)
         return
 
-    await message.answer(
-        f"📦 <b>Kutilayotgan buyurtmalar: {len(pending)} ta</b>",
+    await callback.message.answer(
+        f"📦 <b>Kutilayotgan buyurtmalar: {len(pending)} ta</b> (oxirgi 10 ta ko'rsatiladi):",
         parse_mode="HTML",
     )
 
     for order in pending[:10]:
         service_name = order.service.name if order.service else "—"
+        exec_time = order.service.execution_time if order.service else "—"
         user = await UserDAO.get_by_id(session, order.user_id)
         user_info = f"{user.full_name} ({user.telegram_id})" if user else "Noma'lum"
+        order_num = getattr(order, "order_number", None) or str(order.id)
 
         text = (
-            f"📦 <b>Buyurtma #{order.id}</b>\n"
+            f"📦 <b>Buyurtma #{order_num}</b> (ID: {order.id})\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"👤 Mijoz: {user_info}\n"
             f"📦 Xizmat: {service_name}\n"
             f"🔗 Havola: {order.target_link}\n"
             f"📊 Miqdor: {format_number(order.quantity)}\n"
             f"💰 Narx: {format_price(order.total_price)}\n"
+            f"⏱ Bajarilish oralig'i: {exec_time}\n"
             f"📅 {format_datetime(order.created_at)}\n"
         )
 
         from keyboards.inline import get_admin_order_kb
-        await message.answer(
+        await callback.message.answer(
             text,
             parse_mode="HTML",
             reply_markup=get_admin_order_kb(order.id),
         )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "adm_orders_search", IsAdmin())
+async def admin_orders_search_start(callback: CallbackQuery, state: FSMContext):
+    """Buyurtma raqamini kiritib boshqarish"""
+    await state.set_state(AdminStates.manage_order_by_id)
+    await callback.message.answer(
+        "🔍 <b>Buyurtma raqamini kiriting:</b>\n\n"
+        "Masalan: <code>749201</code> yoki <code>#749201</code> yoki tartib raqami (masalan: <code>15</code>)\n\n"
+        "Buyurtma topilgach, uni bitta tugma bilan <b>Bajarildi</b> yoki <b>Atmen</b> qilishingiz mumkin.",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(AdminStates.manage_order_by_id, IsAdmin())
+async def admin_process_order_search(message: Message, state: FSMContext, session: AsyncSession):
+    """Buyurtma raqamini qidirish va boshqaruv kartasini ko'rsatish"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    query = message.text.strip()
+    order = await OrderDAO.get_by_order_number_or_id(session, query)
+
+    if not order:
+        await message.answer(
+            f"❌ <b>'{query}' raqamli buyurtma topilmadi!</b>\n\n"
+            "Iltimos, buyurtma raqamini tekshirib qaytadan kiriting yoki ❌ Bekor qilish ni bosing:",
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+        return
+
+    await state.clear()
+
+    user = await UserDAO.get_by_id(session, order.user_id)
+    service = order.service
+    service_name = service.name if service else "—"
+    exec_time = service.execution_time if service else "10 daqiqa - 24 soat"
+    order_num = getattr(order, "order_number", None) or str(order.id)
+
+    status_val = order.status.value if hasattr(order.status, 'value') else order.status
+    status_emoji = get_status_emoji(status_val)
+    status_text = get_status_text(status_val)
+
+    text = (
+        f"📦 <b>Buyurtma #{order_num}</b> (Baza ID: {order.id})\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"👤 Mijoz: <b>{user.full_name if user else 'Noma’lum'}</b>\n"
+        f"🆔 Telegram ID: <code>{user.telegram_id if user else '—'}</code>\n"
+    )
+    if user and user.username:
+        text += f"📎 Username: @{user.username}\n"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"🛍 Xizmat: <b>{service_name}</b>\n"
+        f"🔗 Havola: {order.target_link}\n"
+        f"📊 Miqdor: {format_number(order.quantity)}\n"
+        f"💰 Narx: <b>{format_price(order.total_price)}</b>\n"
+        f"⏱ Bajarilish oralig'i: <b>{exec_time}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📋 Hozirgi holat: {status_emoji} <b>{status_text}</b>\n"
+        f"📅 Yaratilgan: {format_datetime(order.created_at)}\n"
+        f"🔄 Yangilangan: {format_datetime(order.updated_at)}\n\n"
+        f"Quyidagi tugmalar orqali buyurtmaga buyruq bering 👇"
+    )
+
+    from keyboards.inline import get_admin_order_manage_kb
+    await message.answer(
+        text,
+        parse_mode="HTML",
+        reply_markup=get_admin_order_manage_kb(order.id),
+    )
 
 
 @router.callback_query(F.data.startswith("adm_complete_"), IsAdmin())
@@ -820,6 +969,7 @@ async def admin_complete_order(callback: CallbackQuery, session: AsyncSession, b
 
     user = await UserDAO.get_by_id(session, order.user_id)
     service_name = order.service.name if order.service else "—"
+    order_num = getattr(order, "order_number", None) or str(order.id)
 
     # Foydalanuvchiga xabar
     if user:
@@ -827,8 +977,8 @@ async def admin_complete_order(callback: CallbackQuery, session: AsyncSession, b
             bot=bot,
             user_telegram_id=user.telegram_id,
             text=(
-                f"✅ <b>Buyurtmangiz bajarildi!</b>\n\n"
-                f"📦 #{order.id} — {service_name}\n"
+                f"✅ <b>Buyurtmangiz muvaffaqiyatli bajarildi!</b>\n\n"
+                f"📦 #{order_num} — {service_name}\n"
                 f"🔗 {order.target_link}\n"
                 f"📊 Miqdor: {format_number(order.quantity)}\n\n"
                 f"Xizmatimizdan foydalanganingiz uchun rahmat! 🙏"
@@ -838,12 +988,12 @@ async def admin_complete_order(callback: CallbackQuery, session: AsyncSession, b
     await callback.message.edit_text(
         f"✅ <b>BUYURTMA BAJARILDI</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📦 #{order_id} — {service_name}\n"
+        f"📦 #{order_num} — {service_name}\n"
         f"👤 Admin: {callback.from_user.full_name}\n"
         f"📅 {format_datetime(order.updated_at)}",
         parse_mode="HTML",
     )
-    await callback.answer("✅ Bajarildi!", show_alert=True)
+    await callback.answer("✅ Bajarildi deb belgilandi!", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("adm_progress_"), IsAdmin())
@@ -857,13 +1007,14 @@ async def admin_progress_order(callback: CallbackQuery, session: AsyncSession, b
         return
 
     user = await UserDAO.get_by_id(session, order.user_id)
+    order_num = getattr(order, "order_number", None) or str(order.id)
     if user:
         await notify_user(
             bot=bot,
             user_telegram_id=user.telegram_id,
             text=(
                 f"🔄 <b>Buyurtmangiz jarayonda!</b>\n\n"
-                f"📦 #{order.id}\n"
+                f"📦 #{order_num}\n"
                 f"Tez orada bajariladi. Kuting..."
             ),
         )
@@ -873,7 +1024,7 @@ async def admin_progress_order(callback: CallbackQuery, session: AsyncSession, b
 
 @router.callback_query(F.data.startswith("adm_cancel_"), IsAdmin())
 async def admin_cancel_order(callback: CallbackQuery, session: AsyncSession, bot: Bot):
-    """Buyurtmani bekor qilish va pulni qaytarish"""
+    """Buyurtmani bekor qilish (Atmen) va pulni qaytarish"""
     order_id = int(callback.data.split("_")[-1])
     order = await OrderDAO.get_by_id(session, order_id)
 
@@ -888,6 +1039,7 @@ async def admin_cancel_order(callback: CallbackQuery, session: AsyncSession, bot
     user = await UserDAO.update_balance(session, order.user_id, order.total_price)
 
     service_name = order.service.name if order.service else "—"
+    order_num = getattr(order, "order_number", None) or str(order.id)
 
     # Foydalanuvchiga xabar
     if user:
@@ -895,22 +1047,22 @@ async def admin_cancel_order(callback: CallbackQuery, session: AsyncSession, bot
             bot=bot,
             user_telegram_id=user.telegram_id,
             text=(
-                f"❌ <b>Buyurtmangiz bekor qilindi!</b>\n\n"
-                f"📦 #{order.id} — {service_name}\n"
+                f"❌ <b>Buyurtmangiz bekor qilindi (Atmen)!</b>\n\n"
+                f"📦 #{order_num} — {service_name}\n"
                 f"💰 {format_price(order.total_price)} balansingizga qaytarildi.\n"
-                f"💵 Yangi balans: {format_price(user.balance)}"
+                f"💵 Yangi balans: <b>{format_price(user.balance)}</b>"
             ),
         )
 
     await callback.message.edit_text(
-        f"❌ <b>BUYURTMA BEKOR QILINDI</b>\n"
+        f"❌ <b>BUYURTMA BEKOR QILINDI (ATMEN)</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📦 #{order_id} — {service_name}\n"
+        f"📦 #{order_num} — {service_name}\n"
         f"💰 {format_price(order.total_price)} qaytarildi\n"
         f"👤 Admin: {callback.from_user.full_name}",
         parse_mode="HTML",
     )
-    await callback.answer("❌ Bekor qilindi, pul qaytarildi!", show_alert=True)
+    await callback.answer("❌ Bekor qilindi (Atmen), pul qaytarildi!", show_alert=True)
 
 
 # ============================================

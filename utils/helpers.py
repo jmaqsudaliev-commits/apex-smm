@@ -89,13 +89,14 @@ def truncate_text(text: str, max_length: int = 50) -> str:
     return text[:max_length - 3] + "..."
 
 
-def format_order_text(order, service_name: str = "") -> str:
+def format_order_text(order, service_name: str = "", execution_time: str = "") -> str:
     """Buyurtma ma'lumotlarini formatlash"""
     status_emoji = get_status_emoji(order.status.value if hasattr(order.status, 'value') else order.status)
     status_text = get_status_text(order.status.value if hasattr(order.status, 'value') else order.status)
+    order_num = getattr(order, "order_number", None) or str(order.id)
 
     text = (
-        f"{status_emoji} <b>Buyurtma #{order.id}</b>\n"
+        f"{status_emoji} <b>Buyurtma #{order_num}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
     )
     if service_name:
@@ -104,16 +105,21 @@ def format_order_text(order, service_name: str = "") -> str:
         f"🔗 Havola: {truncate_text(order.target_link)}\n"
         f"📊 Miqdor: {format_number(order.quantity)}\n"
         f"💰 Narx: {format_price(order.total_price)}\n"
+    )
+    if execution_time:
+        text += f"⏱ Bajarilish vaqti: {execution_time}\n"
+    text += (
         f"📋 Holat: {status_text}\n"
         f"📅 Sana: {format_datetime(order.created_at)}\n"
     )
     return text
 
 
-def format_order_for_group(order, user, service_name: str = "") -> str:
+def format_order_for_group(order, user, service_name: str = "", execution_time: str = "") -> str:
     """Buyurtma ma'lumotlarini admin guruh uchun formatlash"""
+    order_num = getattr(order, "order_number", None) or str(order.id)
     text = (
-        f"📦 <b>YANGI BUYURTMA #{order.id}</b>\n"
+        f"📦 <b>YANGI BUYURTMA #{order_num}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"👤 Mijoz: {user.full_name}"
     )
@@ -129,6 +135,10 @@ def format_order_for_group(order, user, service_name: str = "") -> str:
         f"🔗 Havola: {order.target_link}\n"
         f"📊 Miqdor: {format_number(order.quantity)}\n"
         f"💰 Narx: {format_price(order.total_price)}\n"
+    )
+    if execution_time:
+        text += f"⏱ Bajarilish oralig'i: <b>{execution_time}</b>\n"
+    text += (
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📅 {format_datetime(order.created_at)}\n"
     )

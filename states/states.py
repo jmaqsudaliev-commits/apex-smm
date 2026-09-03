@@ -30,7 +30,11 @@ class AdminStates(StatesGroup):
     add_service_price = State()
     add_service_min = State()
     add_service_max = State()
+    add_service_execution_time = State()
     add_service_desc = State()
+
+    # Buyurtma boshqaruvi (ID orqali)
+    manage_order_by_id = State()
 
     # Foydalanuvchi boshqaruvi
     search_user = State()

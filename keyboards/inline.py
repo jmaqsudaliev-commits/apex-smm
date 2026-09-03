@@ -92,16 +92,36 @@ def get_order_status_kb(order_id: int) -> InlineKeyboardMarkup:
 
 
 # ============================================
-# ADMIN — BUYURTMA GURUHDA
+# ADMIN — BUYURTMALAR BOSHQARUVI
 # ============================================
 
+def get_admin_orders_menu_kb() -> InlineKeyboardMarkup:
+    """Admin buyurtmalar asosiy menyusi"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📋 Kutilayotgan buyurtmalar", callback_data="adm_orders_pending")
+    builder.button(text="🔍 Buyurtma raqami orqali boshqarish", callback_data="adm_orders_search")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 def get_admin_order_kb(order_id: int) -> InlineKeyboardMarkup:
-    """Admin guruhda buyurtma tugmalari"""
+    """Admin guruhda va xabarlarda buyurtma tugmalari"""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Bajarildi", callback_data=f"adm_complete_{order_id}")
     builder.button(text="🔄 Jarayonda", callback_data=f"adm_progress_{order_id}")
-    builder.button(text="❌ Rad etish", callback_data=f"adm_cancel_{order_id}")
+    builder.button(text="❌ Atmen / Bekor qilish", callback_data=f"adm_cancel_{order_id}")
     builder.adjust(3)
+    return builder.as_markup()
+
+
+def get_admin_order_manage_kb(order_id: int) -> InlineKeyboardMarkup:
+    """Admin buyurtma raqami bilan qidirgandagi boshqaruv tugmalari"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Bajarildi", callback_data=f"adm_complete_{order_id}")
+    builder.button(text="❌ Atmen (Bekor qilish)", callback_data=f"adm_cancel_{order_id}")
+    builder.button(text="🔄 Jarayonda", callback_data=f"adm_progress_{order_id}")
+    builder.button(text="🔍 Boshqa buyurtma qidirish", callback_data="adm_orders_search")
+    builder.adjust(2, 1, 1)
     return builder.as_markup()
 
 

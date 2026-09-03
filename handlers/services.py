@@ -86,6 +86,7 @@ async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
         price_text = f"{format_price(service.price_per_1000)} / 1000 dona"
         qty_text = f"{format_number(service.min_quantity)} — {format_number(service.max_quantity)}"
 
+    exec_time = service.execution_time or "10 daqiqa - 24 soat"
     text = (
         f"📦 <b>{service.name}</b>\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -94,7 +95,8 @@ async def show_service_detail(callback: CallbackQuery, session: AsyncSession):
         text += f"📝 {service.description}\n\n"
     text += (
         f"💰 Narx: <b>{price_text}</b>\n"
-        f"📊 Miqdor: {qty_text}\n\n"
+        f"📊 Miqdor: {qty_text}\n"
+        f"⏱ Bajarilish oralig'i: <b>{exec_time}</b>\n\n"
         f"🛒 Buyurtma berish uchun quyidagi tugmani bosing 👇"
     )
 
@@ -162,12 +164,14 @@ async def start_order(callback: CallbackQuery, session: AsyncSession, state: FSM
             service_name=service.name,
             quantity=1,
             total_price=str(total_price),
+            execution_time=service.execution_time or "10 daqiqa - 24 soat",
             is_fixed=True,
         )
 
         await callback.message.edit_text(
             f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
-            f"💰 Narx: <b>{format_price(total_price)}</b>\n\n"
+            f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+            f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
             f"🔗 Iltimos, tegishli havola yoki ma'lumotni yuboring:\n"
             f"(Username, telefon raqam, yoki havola)",
             parse_mode="HTML",
@@ -185,13 +189,15 @@ async def start_order(callback: CallbackQuery, session: AsyncSession, state: FSM
             price_per_1000=str(service.price_per_1000),
             min_qty=service.min_quantity,
             max_qty=service.max_quantity,
+            execution_time=service.execution_time or "10 daqiqa - 24 soat",
             is_fixed=False,
         )
 
         await callback.message.edit_text(
             f"🛒 <b>Buyurtma: {service.name}</b>\n\n"
             f"💰 Narx: {format_price(service.price_per_1000)} / 1000 dona\n"
-            f"📊 Miqdor: {format_number(service.min_quantity)} — {format_number(service.max_quantity)}\n\n"
+            f"📊 Miqdor: {format_number(service.min_quantity)} — {format_number(service.max_quantity)}\n"
+            f"⏱ Bajarilish oralig'i: <b>{service.execution_time or '10 daqiqa - 24 soat'}</b>\n\n"
             f"🔗 Iltimos, havolani yuboring:",
             parse_mode="HTML",
         )
@@ -231,7 +237,8 @@ async def process_order_link(message: Message, state: FSMContext, session: Async
             f"━━━━━━━━━━━━━━━━━━\n\n"
             f"📦 Xizmat: {data['service_name']}\n"
             f"🔗 Havola: {link}\n"
-            f"💰 Narx: <b>{format_price(total_price)}</b>\n\n"
+            f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+            f"⏱ Bajarilish oralig'i: <b>{data.get('execution_time', '10 daqiqa - 24 soat')}</b>\n\n"
             f"✅ Tasdiqlaysizmi?"
         )
         await message.answer(
@@ -305,7 +312,8 @@ async def process_order_quantity(message: Message, state: FSMContext, session: A
         f"📦 Xizmat: {data['service_name']}\n"
         f"🔗 Havola: {data['target_link']}\n"
         f"📊 Miqdor: {format_number(quantity)}\n"
-        f"💰 Narx: <b>{format_price(total_price)}</b>\n\n"
+        f"💰 Narx: <b>{format_price(total_price)}</b>\n"
+        f"⏱ Bajarilish oralig'i: <b>{data.get('execution_time', '10 daqiqa - 24 soat')}</b>\n\n"
         f"💵 Balansingiz: {format_price(user.balance)}\n"
         f"💵 Qoldiq: {format_price(user.balance - total_price)}\n\n"
         f"✅ Tasdiqlaysizmi?"
@@ -351,25 +359,40 @@ async def confirm_order(callback: CallbackQuery, state: FSMContext, session: Asy
         total_price=total_price,
     )
 
+    # Foydalanuvchi balansini yangilangan holatini olish
+    await session.refresh(user)
+
+    exec_time = data.get("execution_time", "10 daqiqa - 24 soat")
+    order_num = getattr(order, "order_number", None) or str(order.id)
+
     await state.clear()
 
-    # Admin guruhga bildirishnoma
+    # Admin guruhga / adminlarga bildirishnoma
     await notify_new_order(
         bot=bot,
         order=order,
         user=user,
         service_name=data.get("service_name", ""),
+        execution_time=exec_time,
+    )
+
+    client_text = (
+        f"✅ <b>Buyurtmangiz muvaffaqiyatli qabul qilindi!</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"🆔 <b>Buyurtma raqami:</b> <code>#{order_num}</code>\n"
+        f"📦 <b>Xizmat turi:</b> {data.get('service_name', '')}\n"
+        f"💰 <b>Xizmat narxi:</b> {format_price(total_price)}\n"
+        f"📊 <b>Miqdor:</b> {format_number(data.get('quantity', 1))}\n"
+        f"⏱ <b>Bajarilish oralig'i:</b> {exec_time}\n"
+        f"🔗 <b>Havola:</b> {data.get('target_link', '')}\n"
+        f"💵 <b>Qoldiq balansingiz:</b> {format_price(user.balance)}\n\n"
+        f"🕐 <b>Holati:</b> 🕐 Kutilmoqda\n\n"
+        f"ℹ️ <i>Buyurtmangiz tizim tomonidan qabul qilindi va ko'rsatilgan vaqt oralig'ida to'liq bajariladi.</i>\n\n"
+        f"📋 Buyurtmangiz holatini istalgan vaqt <b>Buyurtmalarim</b> bo'limidan kuzatib borishingiz mumkin."
     )
 
     await callback.message.edit_text(
-        f"✅ <b>Buyurtma #{order.id} muvaffaqiyatli yaratildi!</b>\n"
-        f"━━━━━━━━━━━━━━━━━━\n\n"
-        f"📦 Xizmat: {data.get('service_name', '')}\n"
-        f"🔗 Havola: {data.get('target_link', '')}\n"
-        f"📊 Miqdor: {format_number(data.get('quantity', 1))}\n"
-        f"💰 Narx: {format_price(total_price)}\n\n"
-        f"🕐 Holat: <b>Kutilmoqda</b>\n\n"
-        f"📋 Buyurtmangizni <b>Buyurtmalarim</b> bo'limidan kuzatishingiz mumkin.",
+        client_text,
         parse_mode="HTML",
     )
 
