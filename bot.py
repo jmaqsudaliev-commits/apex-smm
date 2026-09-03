@@ -23,7 +23,7 @@ from aiogram.types import BotCommand
 
 from config import settings
 from database.engine import create_tables, close_engine, async_session
-from database.dao import seed_categories_and_services, seed_settings
+from database.dao import seed_categories_and_services, seed_settings, SettingsDAO
 from middlewares.database import DatabaseMiddleware
 from middlewares.throttling import ThrottlingMiddleware
 from middlewares.subscription import SubscriptionMiddleware
