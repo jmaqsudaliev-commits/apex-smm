@@ -45,11 +45,11 @@ def _get_engine_kwargs():
             "connect_args": {"check_same_thread": False},
         }
     else:
-        # PostgreSQL uchun — connection pooling
+        # PostgreSQL uchun — connection pooling (Render free plan limitlariga mos)
         return {
             "echo": False,
-            "pool_size": 50,           # Asosiy ulanishlar soni
-            "max_overflow": 100,       # Qo'shimcha ulanishlar
+            "pool_size": 10,           # Asosiy ulanishlar soni
+            "max_overflow": 20,        # Qo'shimcha ulanishlar
             "pool_timeout": 30,        # Ulanish kutish vaqti
             "pool_recycle": 1800,      # 30 daqiqada ulanish yangilanadi
             "pool_pre_ping": True,     # Ulanish holatini tekshiradi
@@ -71,25 +71,33 @@ async_session = async_sessionmaker(
 
 
 async def create_tables():
-    """Jadvallarni yaratish va yetishmayotgan ustunlarni qo'shish (avtomatik migratsiya)"""
+    """Jadvallarni yaratish va mavjud bazani xavfsiz tekshirib yangilash"""
     # data/ papkani yaratish (SQLite uchun)
     if settings.database_url.startswith("sqlite"):
         os.makedirs("data", exist_ok=True)
 
+    def _sync_create_and_migrate(connection):
+        from sqlalchemy import inspect
+        # 1. Barcha jadvallarni yaratish (agar mavjud bo'lmasa)
+        Base.metadata.create_all(connection)
+
+        # 2. Mavjud jadvallarni tekshirish va yetishmayotgan ustunlarni qo'shish
+        insp = inspect(connection)
+
+        # orders jadvalida order_number ustunini tekshirish
+        if insp.has_table("orders"):
+            order_cols = [c["name"] for c in insp.get_columns("orders")]
+            if "order_number" not in order_cols:
+                connection.exec_driver_sql("ALTER TABLE orders ADD COLUMN order_number VARCHAR(50)")
+
+        # services jadvalida execution_time ustunini tekshirish
+        if insp.has_table("services"):
+            service_cols = [c["name"] for c in insp.get_columns("services")]
+            if "execution_time" not in service_cols:
+                connection.exec_driver_sql("ALTER TABLE services ADD COLUMN execution_time VARCHAR(100)")
+
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-        # 1. orders jadvalida order_number ustunini xavfsiz qo'shish
-        try:
-            await conn.execute(text("ALTER TABLE orders ADD COLUMN order_number VARCHAR(50)"))
-        except Exception:
-            pass
-
-        # 2. services jadvalida execution_time ustunini xavfsiz qo'shish
-        try:
-            await conn.execute(text("ALTER TABLE services ADD COLUMN execution_time VARCHAR(100)"))
-        except Exception:
-            pass
+        await conn.run_sync(_sync_create_and_migrate)
 
 
 async def close_engine():
