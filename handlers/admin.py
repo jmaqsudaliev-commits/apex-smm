@@ -1981,3 +1981,167 @@ async def admin_clear_channels(callback: CallbackQuery, session: AsyncSession):
     await SettingsDAO.set(session, "mandatory_channels", "", "Majburiy obuna kanallari")
     await callback.answer("🗑 Barcha majburiy kanallar tozalandi! Obuna o'chirildi.", show_alert=True)
     await callback.message.edit_text("🗑 Barcha majburiy kanallar tozalandi. Obuna talab qilinmaydi.")
+
+
+# ============================================
+# ADMINLAR BOSHQARUVI (QO'SHISH / CHIQARISH)
+# ============================================
+
+async def _render_admins_panel(target_msg, session: AsyncSession, is_edit: bool = False):
+    from keyboards.inline import get_admins_manage_kb
+
+    db_admins = await UserDAO.get_all_admins(session)
+    super_admins_text = "\n".join([f"• 👑 <code>{adm_id}</code> (Super Admin)" for adm_id in settings.admin_ids])
+
+    text = (
+        "👑 <b>Adminlar Boshqaruvi</b>\n"
+        "━━━━━━━━━━━━━━━━━━\n\n"
+        "⭐ <b>Asosiy Super Adminlar (.env):</b>\n"
+        f"{super_admins_text}\n\n"
+        "👥 <b>Qo'shimcha Adminlar (Bazadagi):</b>\n"
+    )
+
+    if db_admins:
+        for i, adm in enumerate(db_admins, 1):
+            username_part = f" (@{adm.username})" if adm.username else ""
+            text += f"{i}. 👑 <b>{adm.full_name}</b>{username_part} — ID: <code>{adm.telegram_id}</code>\n"
+    else:
+        text += "<i>Hozircha qo'shimcha adminlar tayinlanmagan.</i>\n"
+
+    text += (
+        "\n━━━━━━━━━━━━━━━━━━\n"
+        "Yangi admin tayinlash yoki adminlikdan chiqarish uchun quyidagi tugmalardan foydalaning 👇"
+    )
+
+    kb = get_admins_manage_kb(db_admins)
+    if is_edit:
+        try:
+            await target_msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            await target_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await target_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.message(F.text == "👑 Adminlar", IsAdmin())
+async def admin_admins_manage(message: Message, session: AsyncSession):
+    """Adminlar ro'yxati va boshqaruvi"""
+    await _render_admins_panel(message, session, is_edit=False)
+
+
+@router.callback_query(F.data == "adm_admins_manage", IsAdmin())
+async def admin_admins_manage_cb(callback: CallbackQuery, session: AsyncSession):
+    """Adminlar ro'yxati callback"""
+    await callback.answer()
+    await _render_admins_panel(callback.message, session, is_edit=True)
+
+
+@router.callback_query(F.data == "adm_add_admin_start", IsAdmin())
+async def admin_add_admin_start(callback: CallbackQuery, state: FSMContext):
+    """Yangi admin qo'shish — boshlanish"""
+    await callback.answer()
+    await state.set_state(AdminStates.add_admin_id)
+    await callback.message.answer(
+        "👑 <b>Yangi admin tayinlash</b>\n\n"
+        "Admin qilmoqchi bo'lgan foydalanuvchining:\n"
+        "• <b>Telegram ID</b> raqamini (masalan: <code>123456789</code>)\n"
+        "• Yoki <b>@username</b>ini kiriting:\n\n"
+        "ℹ️ <i>Eslatma: Foydalanuvchi avval ushbu botga kirib /start bosgan bo'lishi shart.</i>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+
+
+@router.message(AdminStates.add_admin_id, IsAdmin())
+async def admin_add_admin_save(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+    """Yangi adminni saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    query = message.text.strip().replace("https://t.me/", "").replace("t.me/", "")
+    user = None
+
+    if query.isdigit():
+        user = await UserDAO.get_by_telegram_id(session, int(query))
+        if not user:
+            user = await UserDAO.get_by_id(session, int(query))
+    else:
+        clean_username = query.replace("@", "").strip()
+        users = await UserDAO.search_users(session, clean_username)
+        if users:
+            user = users[0]
+
+    if not user:
+        await message.answer(
+            "❌ <b>Foydalanuvchi topilmadi!</b>\n\n"
+            "U avval botga kirib /start bosgan bo'lishi kerak. Tekshirib qaytadan kiriting yoki ❌ Bekor qilish ni bosing:",
+            parse_mode="HTML",
+            reply_markup=get_cancel_kb(),
+        )
+        return
+
+    if user.is_admin or (user.telegram_id in settings.admin_ids):
+        await state.clear()
+        await message.answer(
+            f"⚠️ <b>{user.full_name}</b> allaqachon bot administratori hisoblanadi!",
+            parse_mode="HTML",
+            reply_markup=get_admin_menu_kb(),
+        )
+        return
+
+    await UserDAO.set_admin(session, user.id, True)
+    await state.clear()
+
+    # Yangi adminga bildirishnoma
+    try:
+        await notify_user(
+            bot=bot,
+            user_telegram_id=user.telegram_id,
+            text=(
+                f"👑 <b>Tabriklaymiz! Sizga botda ADMIN huquqi berildi!</b>\n\n"
+                f"Endi siz /admin buyrug'i orqali admin boshqaruv paneliga kirishingiz va botni boshqarishingiz mumkin."
+            ),
+        )
+    except Exception as e:
+        logger.error(f"Yangi adminga xabar yuborishda xato: {e}")
+
+    await message.answer(
+        f"✅ <b>{user.full_name}</b> muvaffaqiyatli ADMIN etib tayinlandi!\n\n"
+        f"🆔 Telegram ID: <code>{user.telegram_id}</code>\n"
+        f"Unga adminlik huquqi berildi va bildirishnoma yuborildi. ✅",
+        parse_mode="HTML",
+        reply_markup=get_admin_menu_kb(),
+    )
+
+
+@router.callback_query(F.data.startswith("adm_remove_admin_"), IsAdmin())
+async def admin_remove_admin_cb(callback: CallbackQuery, session: AsyncSession, bot: Bot):
+    """Adminlikdan chiqarish"""
+    await callback.answer()
+    user_id = int(callback.data.split("_")[-1])
+    user = await UserDAO.get_by_id(session, user_id)
+
+    if not user:
+        await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+        return
+
+    if user.telegram_id in settings.admin_ids:
+        await callback.answer("⚠️ Super Adminni (.env) adminlikdan chiqarib bo'lmaydi!", show_alert=True)
+        return
+
+    await UserDAO.set_admin(session, user_id, False)
+
+    # Foydalanuvchiga xabar
+    try:
+        await notify_user(
+            bot=bot,
+            user_telegram_id=user.telegram_id,
+            text="⚠️ <b>Sizning botdagi adminlik huquqingiz to'xtatildi.</b>",
+        )
+    except Exception:
+        pass
+
+    await callback.answer(f"❌ {user.full_name} adminlikdan chiqarildi!", show_alert=True)
+    await _render_admins_panel(callback.message, session, is_edit=True)

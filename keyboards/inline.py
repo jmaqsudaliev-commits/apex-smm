@@ -311,3 +311,20 @@ def get_back_kb(callback_data: str = "back_main") -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🔙 Orqaga", callback_data=callback_data)]
         ]
     )
+
+
+def get_admins_manage_kb(db_admins) -> InlineKeyboardMarkup:
+    """Adminlar boshqaruvi klaviaturasi"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ Yangi admin qo'shish", callback_data="adm_add_admin_start")
+    for adm in db_admins:
+        name = (adm.full_name or "Admin")[:16]
+        builder.button(
+            text=f"❌ O'chirish: {name}",
+            callback_data=f"adm_remove_admin_{adm.id}",
+        )
+    builder.adjust(1)
+    builder.row(
+        InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin")
+    )
+    return builder.as_markup()
