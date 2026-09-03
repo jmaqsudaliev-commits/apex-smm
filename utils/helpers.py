@@ -78,6 +78,8 @@ def get_payment_method_text(method: str) -> str:
         "payme": "💳 Payme",
         "cash": "💵 Naqd pul",
         "stars": "⭐ Telegram Stars",
+        "ton": "💎 TON (Kriptovalyuta)",
+        "usdt": "💵 USDT (TRC-20 / TON)",
     }
     return method_map.get(method, method)
 

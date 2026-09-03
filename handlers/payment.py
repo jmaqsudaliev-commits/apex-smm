@@ -127,6 +127,46 @@ async def pay_stars(callback: CallbackQuery, state: FSMContext, session: AsyncSe
     await callback.answer()
 
 
+@router.callback_query(F.data == "pay_method_ton")
+async def pay_ton(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """TON orqali to'lov"""
+    await state.set_state(PaymentStates.waiting_for_amount)
+    await state.update_data(payment_method="ton")
+
+    ton_rate = await SettingsDAO.get_int(session, "ton_rate", 70000)
+
+    await callback.message.edit_text(
+        f"💎 <b>TON orqali to'lov</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"💱 <b>Kurs:</b> 1 TON = <b>{format_price(Decimal(str(ton_rate)))}</b>\n\n"
+        f"Necha TON to'lamoqchisiz? (miqdorni kiriting, masalan: <code>1</code> yoki <code>2.5</code>)\n\n"
+        f"📌 Kiritgan miqdoringiz kurs bo'yicha avtomatik so'mga hisoblanadi!",
+        parse_mode="HTML",
+    )
+    await callback.message.answer("💎 TON miqdorini kiriting:", reply_markup=get_cancel_kb())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "pay_method_usdt")
+async def pay_usdt(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """USDT orqali to'lov"""
+    await state.set_state(PaymentStates.waiting_for_amount)
+    await state.update_data(payment_method="usdt")
+
+    usdt_rate = await SettingsDAO.get_int(session, "usdt_rate", 13000)
+
+    await callback.message.edit_text(
+        f"💵 <b>USDT orqali to'lov</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"💱 <b>Kurs:</b> 1 USDT = <b>{format_price(Decimal(str(usdt_rate)))}</b>\n\n"
+        f"Necha USDT to'lamoqchisiz? (miqdorni kiriting, masalan: <code>10</code> yoki <code>25</code>)\n\n"
+        f"📌 Kiritgan miqdoringiz kurs bo'yicha avtomatik so'mga hisoblanadi!",
+        parse_mode="HTML",
+    )
+    await callback.message.answer("💵 USDT miqdorini kiriting:", reply_markup=get_cancel_kb())
+    await callback.answer()
+
+
 @router.callback_query(F.data == "cancel_payment")
 async def cancel_payment(callback: CallbackQuery, state: FSMContext):
     """To'lovni bekor qilish"""
@@ -150,24 +190,67 @@ async def process_payment_amount(message: Message, state: FSMContext, session: A
         )
         return
 
-    try:
-        amount_input = int(message.text.strip().replace(" ", "").replace(",", ""))
-    except ValueError:
-        await message.answer("❌ Iltimos, faqat raqam kiriting:")
+    data = await state.get_data()
+    method = data.get("payment_method")
+
+    raw_text = message.text.strip().replace(" ", "").replace(",", ".")
+
+    # 1. Kriptovalyutalar (TON va USDT)
+    if method in ("ton", "usdt"):
+        try:
+            crypto_qty = Decimal(raw_text)
+            if crypto_qty <= Decimal("0"):
+                raise ValueError()
+        except Exception:
+            await message.answer("❌ Iltimos, musbat son kiriting (masalan: 2 yoki 2.5):")
+            return
+
+        if method == "ton":
+            rate = await SettingsDAO.get_int(session, "ton_rate", 70000)
+            wallet = await SettingsDAO.get(session, "wallet_ton", "UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEt5")
+            currency = "TON"
+            symbol = "💎"
+        else:
+            rate = await SettingsDAO.get_int(session, "usdt_rate", 13000)
+            wallet = await SettingsDAO.get(session, "wallet_usdt", "TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+            currency = "USDT"
+            symbol = "💵"
+
+        amount = (crypto_qty * Decimal(str(rate))).quantize(Decimal("1.00"))
+
+        await state.update_data(
+            amount=str(amount),
+            crypto_amount=str(crypto_qty),
+            crypto_currency=currency,
+        )
+        await state.set_state(PaymentStates.waiting_for_screenshot)
+
+        text = (
+            f"{symbol} <b>{currency} to'lov ma'lumotlari</b>\n"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"💰 To'lov miqdori: <b>{crypto_qty} {currency}</b>\n"
+            f"💵 Balansga qo'shiladi: <b>{format_price(amount)}</b>\n"
+            f"💱 Kurs: 1 {currency} = {format_price(Decimal(str(rate)))}\n\n"
+            f"📬 <b>Bizning {currency} hamyon manzili:</b>\n"
+            f"<code>{wallet}</code>\n"
+            f"<i>(Nusxalash uchun ustiga bosing)</i>\n\n"
+            f"📸 To'lovni amalga oshirib, <b>screenshot (chek)</b> ni shu yerga rasm ko'rinishida yuboring."
+        )
+        await message.answer(text, parse_mode="HTML", reply_markup=get_cancel_kb())
         return
 
-    data = await state.get_data()
-    method = data["payment_method"]
-
+    # 2. Telegram Stars
     if method == "stars":
-        # Stars uchun — Stars miqdori kiritiladi
-        stars_rate = await SettingsDAO.get_int(session, "stars_rate", 1500)
-        stars_count = amount_input
-        amount = Decimal(str(stars_count * stars_rate))
-
-        if stars_count < 1:
-            await message.answer("❌ Kamida 1 Star bo'lishi kerak!")
+        try:
+            stars_count = int(raw_text)
+            if stars_count < 1:
+                raise ValueError()
+        except ValueError:
+            await message.answer("❌ Iltimos, butun musbat son kiriting (masalan: 100):")
             return
+
+        stars_rate = await SettingsDAO.get_int(session, "stars_rate", 1500)
+        amount = Decimal(str(stars_count * stars_rate))
 
         await state.update_data(
             amount=str(amount),
@@ -186,38 +269,45 @@ async def process_payment_amount(message: Message, state: FSMContext, session: A
         await message.answer(
             text, parse_mode="HTML", reply_markup=get_cancel_kb()
         )
-    else:
-        # Click/Payme uchun
-        min_payment = await SettingsDAO.get_int(session, "min_payment_amount", 5000)
-        amount = Decimal(str(amount_input))
+        return
 
-        if amount < min_payment:
-            await message.answer(
-                f"❌ Minimum summa: {format_price(Decimal(str(min_payment)))}"
-            )
-            return
+    # 3. Click / Payme
+    try:
+        amount_input = int(raw_text)
+    except ValueError:
+        await message.answer("❌ Iltimos, faqat raqam kiriting:")
+        return
 
-        card_key = "payment_card_click" if method == "click" else "payment_card_payme"
-        card = await SettingsDAO.get(session, card_key, "8600 0000 0000 0000")
-        card_holder = await SettingsDAO.get(session, "payment_card_holder", "ISM FAMILIYA")
-        method_name = "Click" if method == "click" else "Payme"
+    min_payment = await SettingsDAO.get_int(session, "min_payment_amount", 5000)
+    amount = Decimal(str(amount_input))
 
-        await state.update_data(amount=str(amount))
-        await state.set_state(PaymentStates.waiting_for_screenshot)
-
-        text = (
-            f"💳 <b>{method_name} orqali to'lov</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n\n"
-            f"💰 Summa: <b>{format_price(amount)}</b>\n\n"
-            f"💳 Karta raqam:\n"
-            f"<code>{card}</code>\n\n"
-            f"👤 Karta egasi: <b>{card_holder}</b>\n\n"
-            f"📸 To'lovni amalga oshiring va <b>screenshot</b> yuboring.\n"
-            f"⚠️ Summa to'liq mos kelishi kerak!"
-        )
+    if amount < min_payment:
         await message.answer(
-            text, parse_mode="HTML", reply_markup=get_cancel_kb()
+            f"❌ Minimum summa: {format_price(Decimal(str(min_payment)))}"
         )
+        return
+
+    card_key = "payment_card_click" if method == "click" else "payment_card_payme"
+    card = await SettingsDAO.get(session, card_key, "8600 0000 0000 0000")
+    card_holder = await SettingsDAO.get(session, "payment_card_holder", "ISM FAMILIYA")
+    method_name = "Click" if method == "click" else "Payme"
+
+    await state.update_data(amount=str(amount))
+    await state.set_state(PaymentStates.waiting_for_screenshot)
+
+    text = (
+        f"💳 <b>{method_name} orqali to'lov</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"💰 Summa: <b>{format_price(amount)}</b>\n\n"
+        f"💳 Karta raqam:\n"
+        f"<code>{card}</code>\n\n"
+        f"👤 Karta egasi: <b>{card_holder}</b>\n\n"
+        f"📸 To'lovni amalga oshiring va <b>screenshot</b> yuboring.\n"
+        f"⚠️ Summa to'liq mos kelishi kerak!"
+    )
+    await message.answer(
+        text, parse_mode="HTML", reply_markup=get_cancel_kb()
+    )
 
 
 # ============================================

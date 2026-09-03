@@ -83,51 +83,53 @@ async def notify_new_payment(
     payment: Payment,
     user: User,
 ) -> bool:
-    """Yangi to'lov haqida admin guruhga xabar yuborish"""
+    """Yangi to'lov haqida admin guruhga yoki to'g'ridan-to'g'ri adminlarga xabar yuborish"""
     group_id = await get_order_group_id()
-    if not group_id:
-        logger.warning("ORDER_GROUP_ID sozlanmagan — xabar yuborilmadi")
-        return False
 
     try:
         text = (
             f"💳 <b>YANGI TO'LOV #{payment.id}</b>\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"👤 Mijoz: {user.full_name}"
+            f"━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 Mijoz: <b>{user.full_name}</b>"
         )
         if user.username:
             text += f" (@{user.username})"
         text += (
-            f"\n🆔 ID: <code>{user.telegram_id}</code>\n"
+            f"\n🆔 Telegram ID: <code>{user.telegram_id}</code>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Summa: <b>{format_price(payment.amount)}</b>\n"
-            f"💳 Usul: {get_payment_method_text(payment.payment_method.value)}\n"
+            f"💰 Qo'shiladigan summa: <b>{format_price(payment.amount)}</b>\n"
+            f"💳 To'lov usuli: <b>{get_payment_method_text(payment.payment_method.value)}</b>\n"
             f"📅 {format_datetime(payment.created_at)}\n"
         )
 
         kb = get_admin_payment_kb(payment.id)
 
-        # Agar screenshot bo'lsa — rasm bilan yuborish
-        if payment.screenshot_file_id:
-            await bot.send_photo(
-                chat_id=group_id,
-                photo=payment.screenshot_file_id,
-                caption=text,
-                parse_mode="HTML",
-                reply_markup=kb,
-            )
-        else:
-            await bot.send_message(
-                chat_id=group_id,
-                text=text,
-                parse_mode="HTML",
-                reply_markup=kb,
-            )
+        target_chat_ids = [group_id] if (group_id and group_id != 0) else list(settings.admin_ids)
 
-        logger.info(f"To'lov #{payment.id} admin guruhga ({group_id}) yuborildi")
+        for target_id in target_chat_ids:
+            try:
+                if payment.screenshot_file_id:
+                    await bot.send_photo(
+                        chat_id=target_id,
+                        photo=payment.screenshot_file_id,
+                        caption=text,
+                        parse_mode="HTML",
+                        reply_markup=kb,
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=target_id,
+                        text=text,
+                        parse_mode="HTML",
+                        reply_markup=kb,
+                    )
+            except Exception as e:
+                logger.error(f"To'lov xabarini {target_id} ga yuborishda xato: {e}")
+
+        logger.info(f"To'lov #{payment.id} yuborildi ({target_chat_ids})")
         return True
     except Exception as e:
-        logger.error(f"Admin guruhga to'lov xabari yuborishda xato: {e}")
+        logger.error(f"Adminlarga to'lov xabari yuborishda umumiy xato: {e}")
         return False
 
 

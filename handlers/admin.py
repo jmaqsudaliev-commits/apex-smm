@@ -1198,15 +1198,17 @@ async def admin_settings(message: Message, session: AsyncSession):
     )
 
     settings_display = {
-        "referral_bonus_percent": "🔗 Referal bonus",
-        "min_payment_amount": "💰 Min to'lov summasi",
+        "ton_rate": "💎 1 TON kursi",
+        "usdt_rate": "💵 1 USDT kursi",
+        "wallet_ton": "📬 TON hamyon",
+        "wallet_usdt": "📬 USDT hamyon",
         "stars_rate": "⭐ Stars kursi",
         "payment_card_click": "💳 Click karta",
         "payment_card_payme": "💳 Payme karta",
         "payment_card_holder": "👤 Karta egasi",
+        "min_payment_amount": "💰 Min to'lov summasi",
+        "referral_bonus_percent": "🔗 Referal bonus",
         "support_username": "📞 Support",
-        "mandatory_channels": "📢 Majburiy kanallar",
-        "order_group_id": "📦 Buyurtmalar guruhi",
         "welcome_bonus": "🎁 Xush kelibsiz bonusi",
     }
 
@@ -1214,7 +1216,7 @@ async def admin_settings(message: Message, session: AsyncSession):
         val = all_settings.get(key, {}).get("value", "—")
         if key == "referral_bonus_percent":
             val = f"{val}%"
-        elif key in ("min_payment_amount", "stars_rate", "welcome_bonus"):
+        elif key in ("min_payment_amount", "stars_rate", "welcome_bonus", "ton_rate", "usdt_rate"):
             try:
                 val = f"{int(val):,} so'm".replace(",", " ")
             except Exception:
@@ -1244,6 +1246,10 @@ async def admin_edit_setting(callback: CallbackQuery, state: FSMContext):
     key = callback.data.replace("adm_setting_", "")
 
     hints = {
+        "ton_rate": "1 TON narxini so'mda kiriting (masalan: 70000)\nKlient TON kiritganda shu narx bo'yicha avtomatik so'mga hisoblanadi!",
+        "usdt_rate": "1 USDT narxini so'mda kiriting (masalan: 13000)\nKlient USDT kiritganda shu narx bo'yicha avtomatik so'mga hisoblanadi!",
+        "wallet_ton": "Admin TON hamyon manzilini kiriting (masalan: UQ...):",
+        "wallet_usdt": "Admin USDT (TRC-20 / TON) hamyon manzilini kiriting (masalan: TX...):",
         "referral_bonus_percent": "Referal bonus foizini kiriting (masalan: 5)",
         "min_payment_amount": "Minimum to'lov summasini kiriting so'mda (masalan: 5000)",
         "stars_rate": "1 Telegram Star = necha so'm (masalan: 1500)",
@@ -1251,8 +1257,6 @@ async def admin_edit_setting(callback: CallbackQuery, state: FSMContext):
         "payment_card_payme": "Payme karta raqamini kiriting",
         "payment_card_holder": "Karta egasining to'liq ismini kiriting",
         "support_username": "Support username kiriting (@ siz)",
-        "mandatory_channels": "Kanallarni vergul bilan kiriting (masalan: kanal1,kanal2)\nBo'sh qoldiring = majburiy obuna o'chiriladi",
-        "order_group_id": "Buyurtmalar guruhi ID sini kiriting\nGuruhga botni qo'shing va /id buyrug'ini yuboring",
         "welcome_bonus": "Yangi foydalanuvchiga beriladigan bonus (so'mda, 0 = yo'q)",
     }
 

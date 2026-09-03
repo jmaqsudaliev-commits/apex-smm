@@ -96,6 +96,13 @@ async def create_tables():
             if "execution_time" not in service_cols:
                 connection.exec_driver_sql("ALTER TABLE services ADD COLUMN execution_time VARCHAR(100)")
 
+        # PostgreSQL da paymentmethod enum ga 'ton' va 'usdt' qo'shish
+        try:
+            connection.exec_driver_sql("ALTER TYPE paymentmethod ADD VALUE IF NOT EXISTS 'ton'")
+            connection.exec_driver_sql("ALTER TYPE paymentmethod ADD VALUE IF NOT EXISTS 'usdt'")
+        except Exception:
+            pass
+
     async with engine.begin() as conn:
         await conn.run_sync(_sync_create_and_migrate)
 

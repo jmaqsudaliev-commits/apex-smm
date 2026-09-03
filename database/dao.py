@@ -738,6 +738,10 @@ class SettingsDAO:
         "mandatory_channels": ("", "Majburiy obuna kanallari (vergul bilan)"),
         "order_group_id": ("0", "Buyurtmalar guruhi ID si"),
         "welcome_bonus": ("0", "Yangi foydalanuvchiga beriladigan bonus (so'm)"),
+        "ton_rate": ("70000", "1 TON = necha so'm"),
+        "usdt_rate": ("13000", "1 USDT = necha so'm"),
+        "wallet_ton": ("UQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEt5", "Admin TON hamyon manzili"),
+        "wallet_usdt": ("TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "Admin USDT (TRC-20) hamyon manzili"),
     }
 
     @staticmethod

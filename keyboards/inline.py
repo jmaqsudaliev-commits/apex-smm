@@ -142,8 +142,10 @@ def get_payment_methods_kb() -> InlineKeyboardMarkup:
     builder.button(text="💳 Click", callback_data="pay_method_click")
     builder.button(text="💳 Payme", callback_data="pay_method_payme")
     builder.button(text="⭐ Telegram Stars", callback_data="pay_method_stars")
+    builder.button(text="💎 TON", callback_data="pay_method_ton")
+    builder.button(text="💵 USDT", callback_data="pay_method_usdt")
     builder.button(text="🔙 Orqaga", callback_data="back_to_balance")
-    builder.adjust(2, 1, 1)
+    builder.adjust(2, 1, 2, 1)
     return builder.as_markup()
 
 

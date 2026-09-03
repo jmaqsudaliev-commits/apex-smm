@@ -55,6 +55,8 @@ class PaymentMethod(str, enum.Enum):
     PAYME = "payme"
     CASH = "cash"
     STARS = "stars"
+    TON = "ton"
+    USDT = "usdt"
 
 
 # ============================================
