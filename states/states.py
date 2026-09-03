@@ -59,3 +59,6 @@ class AdminStates(StatesGroup):
 
     # Buyurtmalar guruhi sozlash
     set_order_group_id = State()
+
+    # Sozlamani tahrirlash
+    edit_bot_setting = State()

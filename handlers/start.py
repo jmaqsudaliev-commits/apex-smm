@@ -9,6 +9,7 @@ from aiogram import Router, Bot, F
 from aiogram.filters import CommandStart, CommandObject
 from aiogram.types import Message, CallbackQuery
 from aiogram.enums import ChatMemberStatus
+from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import settings
@@ -33,11 +34,13 @@ async def cmd_start(
     command: CommandObject,
     session: AsyncSession,
     bot: Bot,
+    state: FSMContext,
 ):
     """
     /start — Boshlash
     /start ref_CODE — Referal orqali boshlash
     """
+    await state.clear()
     telegram_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username

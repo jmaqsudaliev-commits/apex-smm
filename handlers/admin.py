@@ -1256,12 +1256,8 @@ async def admin_edit_setting(callback: CallbackQuery, state: FSMContext):
         "welcome_bonus": "Yangi foydalanuvchiga beriladigan bonus (so'mda, 0 = yo'q)",
     }
 
-    await state.set_state(AdminStates.broadcast_message)  # reuse state
+    await state.set_state(AdminStates.edit_bot_setting)
     await state.update_data(editing_setting_key=key)
-
-    from states.states import AdminStates as AS
-    # Maxsus state ishlatamiz
-    await state.set_data({"editing_setting_key": key})
 
     hint = hints.get(key, "Yangi qiymatni kiriting:")
     await callback.message.answer(
@@ -1271,19 +1267,21 @@ async def admin_edit_setting(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-    # Custom state o'rnatamiz
-    from aiogram.fsm.state import State
-    await state.set_state(State("edit_bot_setting"))
 
-
-@router.message(F.text != "❌ Bekor qilish", IsAdmin())
+@router.message(AdminStates.edit_bot_setting, IsAdmin())
 async def admin_save_setting(message: Message, state: FSMContext, session: AsyncSession):
-    """Sozlamani saqlash (catch-all for settings edit)"""
+    """Sozlamani saqlash"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
     data = await state.get_data()
     key = data.get("editing_setting_key")
 
     if not key:
-        return  # Bu handler faqat sozlama tahrirlashda ishlaydi
+        await state.clear()
+        return
 
     value = message.text.strip()
     await SettingsDAO.set(session, key, value)
