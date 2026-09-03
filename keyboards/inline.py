@@ -248,15 +248,50 @@ def get_admin_service_edit_kb(service_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def get_admin_user_kb(user_id: int, is_banned: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
-    """Admin — foydalanuvchi boshqaruvi"""
+def get_admin_users_list_kb(users, page: int, total_pages: int) -> InlineKeyboardMarkup:
+    """Admin — foydalanuvchilar to'liq ro'yxati va sahifalash"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="💰 Balans o'zgartirish", callback_data=f"adm_set_bal_{user_id}")
-    ban_text = "🔓 Ban olish" if is_banned else "🔒 Ban berish"
+    for u in users:
+        ban_ico = "🔴" if u.is_banned else "🟢"
+        name = (u.full_name or "Noma'lum")[:16]
+        bal = f"{int(u.balance):,} so'm".replace(",", " ")
+        builder.button(
+            text=f"{ban_ico} {name} | {bal}",
+            callback_data=f"adm_view_user_{u.id}",
+        )
+    builder.adjust(1)
+
+    nav_row = []
+    if page > 1:
+        nav_row.append(InlineKeyboardButton(text="◀️ Oldingi", callback_data=f"adm_users_page_{page - 1}"))
+    nav_row.append(InlineKeyboardButton(text=f"📄 {page}/{max(total_pages, 1)}", callback_data="adm_noop"))
+    if page < total_pages:
+        nav_row.append(InlineKeyboardButton(text="Keyingi ▶️", callback_data=f"adm_users_page_{page + 1}"))
+
+    if nav_row:
+        builder.row(*nav_row)
+
+    builder.row(
+        InlineKeyboardButton(text="🔍 Qidirish (ID / Username)", callback_data="adm_search_user_start"),
+        InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin"),
+    )
+    return builder.as_markup()
+
+
+def get_admin_user_kb(user_id: int, is_banned: bool, is_admin: bool = False) -> InlineKeyboardMarkup:
+    """Admin — tanlangan foydalanuvchi boshqaruvi"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🎁 Bonus qo'shish", callback_data=f"adm_bonus_{user_id}")
+    builder.button(text="💰 Balans o'rnatish", callback_data=f"adm_set_bal_{user_id}")
+    ban_text = "🟢 Blokdan chiqarish" if is_banned else "🚫 Bloklash (Ban)"
     builder.button(text=ban_text, callback_data=f"adm_ban_{user_id}")
     admin_text = "❌ Admindan olish" if is_admin else "👑 Admin qilish"
     builder.button(text=admin_text, callback_data=f"adm_toggle_admin_{user_id}")
-    builder.adjust(2, 1)
+    builder.row(
+        InlineKeyboardButton(text="👥 Barcha foydalanuvchilar", callback_data="adm_users_page_1"),
+        InlineKeyboardButton(text="🔙 Admin panel", callback_data="back_admin"),
+    )
+    builder.adjust(2, 2, 2)
     return builder.as_markup()
 
 

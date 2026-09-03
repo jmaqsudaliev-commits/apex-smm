@@ -89,12 +89,106 @@ async def admin_stats(message: Message, session: AsyncSession):
 # ============================================
 
 @router.message(F.text == "👥 Foydalanuvchilar", IsAdmin())
-async def admin_users(message: Message, state: FSMContext):
-    """Foydalanuvchini qidirish"""
+async def admin_users(message: Message, session: AsyncSession):
+    """Foydalanuvchilar boshqaruvi — to'liq ro'yxat va statistika"""
+    await show_users_page(message, session, page=1)
+
+
+async def show_users_page(message_or_callback_msg, session: AsyncSession, page: int = 1, is_edit: bool = False):
+    """Foydalanuvchilar sahifasini chiqarish"""
+    import math
+    from keyboards.inline import get_admin_users_list_kb
+
+    total_users = await UserDAO.get_total_count(session)
+    banned_count = await UserDAO.get_banned_count(session)
+    active_count = max(0, total_users - banned_count)
+    page_size = 8
+    total_pages = max(1, math.ceil(total_users / page_size))
+    page = max(1, min(page, total_pages))
+
+    users = await UserDAO.get_users_paginated(session, page=page, page_size=page_size)
+
+    text = (
+        f"👥 <b>Foydalanuvchilar boshqaruvi</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"📊 Jami foydalanuvchilar: <b>{format_number(total_users)} ta</b>\n"
+        f"🟢 Faol: <b>{format_number(active_count)} ta</b>  |  🔴 Bloklangan: <b>{format_number(banned_count)} ta</b>\n"
+        f"📄 Sahifa: <b>{page} / {total_pages}</b>\n\n"
+        f"Foydalanuvchini boshqarish yoki bonus berish uchun uning ustiga bosing 👇"
+    )
+    kb = get_admin_users_list_kb(users, page, total_pages)
+
+    if is_edit:
+        try:
+            await message_or_callback_msg.edit_text(text, parse_mode="HTML", reply_markup=kb)
+        except Exception:
+            await message_or_callback_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+    else:
+        await message_or_callback_msg.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data.startswith("adm_users_page_"), IsAdmin())
+async def admin_users_page_cb(callback: CallbackQuery, session: AsyncSession):
+    """Sahifalash tugmalari"""
+    await callback.answer()
+    page = int(callback.data.split("_")[-1])
+    await show_users_page(callback.message, session, page=page, is_edit=True)
+
+
+@router.callback_query(F.data == "adm_noop")
+async def admin_noop(callback: CallbackQuery):
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("adm_view_user_"), IsAdmin())
+async def admin_view_user_card(callback: CallbackQuery, session: AsyncSession):
+    """Foydalanuvchi to'liq ma'lumotlar kartasi"""
+    await callback.answer()
+    user_id = int(callback.data.split("_")[-1])
+    user = await UserDAO.get_by_id(session, user_id)
+
+    if not user:
+        await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+        return
+
+    from keyboards.inline import get_admin_user_kb
+    ban_status = "🔴 Bloklangan (Ban)" if user.is_banned else "🟢 Faol"
+    is_user_adm = user.is_admin or (user.telegram_id in settings.admin_ids)
+    role_status = "👑 Admin" if is_user_adm else "👤 Foydalanuvchi"
+
+    text = (
+        f"👤 <b>Foydalanuvchi ma'lumotlari</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 Ismi: <b>{user.full_name}</b>\n"
+        f"🆔 Telegram ID: <code>{user.telegram_id}</code>\n"
+    )
+    if user.username:
+        text += f"📎 Username: @{user.username}\n"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Joriy balans: <b>{format_price(user.balance)}</b>\n"
+        f"💸 Jami xarajat: <b>{format_price(user.total_spent)}</b>\n"
+        f"📦 Buyurtmalar: <b>{user.total_orders} ta</b>\n"
+        f"📋 Holati: <b>{ban_status}</b>\n"
+        f"👑 Roli: <b>{role_status}</b>\n"
+        f"📅 Ro'yxatdan o'tgan: {format_datetime(user.created_at)}\n\n"
+        f"Boshqarish buyrug'ini tanlang 👇"
+    )
+    kb = get_admin_user_kb(user.id, user.is_banned, is_user_adm)
+    try:
+        await callback.message.edit_text(text, parse_mode="HTML", reply_markup=kb)
+    except Exception:
+        await callback.message.answer(text, parse_mode="HTML", reply_markup=kb)
+
+
+@router.callback_query(F.data == "adm_search_user_start", IsAdmin())
+async def admin_search_user_start_cb(callback: CallbackQuery, state: FSMContext):
+    """Foydalanuvchini qidirish boshlanishi"""
+    await callback.answer()
     await state.set_state(AdminStates.search_user)
-    await message.answer(
+    await callback.message.answer(
         "🔍 <b>Foydalanuvchini qidirish</b>\n\n"
-        "Telegram ID, username yoki ismni kiriting:",
+        "Telegram ID, @username yoki ismni kiriting:",
         parse_mode="HTML",
         reply_markup=get_cancel_kb(),
     )
@@ -112,34 +206,34 @@ async def admin_search_user(message: Message, state: FSMContext, session: AsyncS
     users = await UserDAO.search_users(session, query)
 
     if not users:
-        # ID bilan bevosita qidirish
         if query.isdigit():
             user = await UserDAO.get_by_telegram_id(session, int(query))
             if user:
                 users = [user]
 
     if not users:
-        await message.answer("❌ Foydalanuvchi topilmadi. Qaytadan qidiring:")
+        await message.answer("❌ Foydalanuvchi topilmadi. Qaytadan qidiring yoki ❌ Bekor qilish ni bosing:")
         return
 
     await state.clear()
+    from keyboards.inline import get_admin_user_kb
 
     for user in users[:5]:
-        ban_status = "🔴 Banlangan" if user.is_banned else "🟢 Faol"
+        ban_status = "🔴 Bloklangan (Ban)" if user.is_banned else "🟢 Faol"
         is_user_adm = user.is_admin or (user.telegram_id in settings.admin_ids)
         role_status = "👑 Admin" if is_user_adm else "👤 Foydalanuvchi"
         text = (
             f"👤 <b>{user.full_name}</b>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"🆔 ID: <code>{user.telegram_id}</code>\n"
+            f"🆔 Telegram ID: <code>{user.telegram_id}</code>\n"
         )
         if user.username:
             text += f"📎 @{user.username}\n"
         text += (
-            f"💰 Balans: {format_price(user.balance)}\n"
-            f"📦 Buyurtmalar: {user.total_orders}\n"
+            f"💰 Balans: <b>{format_price(user.balance)}</b>\n"
+            f"📦 Buyurtmalar: {user.total_orders} ta\n"
             f"💸 Sarflagan: {format_price(user.total_spent)}\n"
-            f"📋 Holat: {ban_status} | <b>{role_status}</b>\n"
+            f"📋 Holat: <b>{ban_status}</b> | <b>{role_status}</b>\n"
             f"📅 Ro'yxatdan: {format_datetime(user.created_at)}\n"
         )
         await message.answer(
@@ -151,9 +245,85 @@ async def admin_search_user(message: Message, state: FSMContext, session: AsyncS
     await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
 
 
+@router.callback_query(F.data.startswith("adm_bonus_"), IsAdmin())
+async def admin_add_bonus_start(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    """Foydalanuvchi balansiga bonus qo'shish"""
+    await callback.answer()
+    user_id = int(callback.data.split("_")[-1])
+    user = await UserDAO.get_by_id(session, user_id)
+
+    if not user:
+        await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
+        return
+
+    await state.set_state(AdminStates.add_user_bonus)
+    await state.update_data(target_user_id=user_id, target_user_name=user.full_name)
+
+    await callback.message.answer(
+        f"🎁 <b>{user.full_name} balansiga bonus qo'shish</b>\n\n"
+        f"Qo'shmoqchi bo'lgan summa miqdorini so'mda kiriting:\n"
+        f"Masalan: <code>10000</code> yoki <code>50000</code>\n\n"
+        f"ℹ️ <i>Ushbu summa mijoz hisobiga bonus sifatida qo'shiladi va unga tabrik xabari yuboriladi.</i>",
+        parse_mode="HTML",
+        reply_markup=get_cancel_kb(),
+    )
+
+
+@router.message(AdminStates.add_user_bonus, IsAdmin())
+async def admin_add_bonus_save(message: Message, state: FSMContext, session: AsyncSession, bot: Bot):
+    """Bonus summasi qabul qilindi va qo'shildi"""
+    if message.text == "❌ Bekor qilish":
+        await state.clear()
+        await message.answer("🔐 Admin Panel", reply_markup=get_admin_menu_kb())
+        return
+
+    data = await state.get_data()
+    user_id = data.get("target_user_id")
+
+    text_val = message.text.strip().replace(" ", "").replace("+", "").replace(",", "")
+    try:
+        bonus_amount = Decimal(text_val)
+        if bonus_amount <= 0:
+            raise ValueError()
+    except Exception:
+        await message.answer("❌ Iltimos, faqat musbat raqam kiriting (masalan: 10000):")
+        return
+
+    user = await UserDAO.update_balance(session, user_id, bonus_amount)
+    await state.clear()
+
+    if user:
+        # Mijozga chiroyli tabrik xabari
+        try:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text=(
+                    f"🎁 <b>Tabriklaymiz! Balansingizga bonus qo'shildi!</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"💰 Qo'shilgan bonus: <b>+{format_price(bonus_amount)}</b>\n"
+                    f"💵 Yangi balansingiz: <b>{format_price(user.balance)}</b>\n\n"
+                    f"Xizmatlarimizdan unumli foydalanishingizni tilaymiz! ✨"
+                ),
+            )
+        except Exception as e:
+            logger.error(f"Mijozga bonus xabarini yuborishda xato: {e}")
+
+        await message.answer(
+            f"✅ <b>Bonus muvaffaqiyatli qo'shildi!</b>\n\n"
+            f"👤 Mijoz: <b>{user.full_name}</b>\n"
+            f"🎁 Qo'shildi: <b>+{format_price(bonus_amount)}</b>\n"
+            f"💵 Yangi balans: <b>{format_price(user.balance)}</b>\n\n"
+            f"Mijozga tabrik bildirishnomasi yetkazildi. ✅",
+            parse_mode="HTML",
+            reply_markup=get_admin_menu_kb(),
+        )
+
+
 @router.callback_query(F.data.startswith("adm_set_bal_"), IsAdmin())
 async def admin_set_balance_start(callback: CallbackQuery, state: FSMContext):
     """Balans o'zgartirish — boshlanish"""
+    await callback.answer()
     user_id = int(callback.data.split("_")[-1])
     await state.set_state(AdminStates.set_user_balance)
     await state.update_data(target_user_id=user_id)
@@ -163,7 +333,6 @@ async def admin_set_balance_start(callback: CallbackQuery, state: FSMContext):
         "Yoki +10000 (qo'shish) / -5000 (ayirish)",
         reply_markup=get_cancel_kb(),
     )
-    await callback.answer()
 
 
 @router.message(AdminStates.set_user_balance, IsAdmin())
@@ -181,12 +350,10 @@ async def admin_set_balance(message: Message, state: FSMContext, session: AsyncS
 
     try:
         if text.startswith("+") or text.startswith("-"):
-            # Qo'shish/ayirish
             amount = Decimal(text)
             user = await UserDAO.update_balance(session, user_id, amount)
             action = "qo'shildi" if amount > 0 else "ayirildi"
         else:
-            # To'g'ridan-to'g'ri o'rnatish
             amount = Decimal(text)
             await UserDAO.set_balance(session, user_id, amount)
             user = await UserDAO.get_by_id(session, user_id)
@@ -207,8 +374,9 @@ async def admin_set_balance(message: Message, state: FSMContext, session: AsyncS
 
 
 @router.callback_query(F.data.startswith("adm_ban_"), IsAdmin())
-async def admin_ban_user(callback: CallbackQuery, session: AsyncSession):
-    """Foydalanuvchini ban/unban qilish"""
+async def admin_ban_user(callback: CallbackQuery, session: AsyncSession, bot: Bot):
+    """Foydalanuvchini bloklash (Ban) yoki blokdan chiqarish (Unban)"""
+    await callback.answer()
     user_id = int(callback.data.split("_")[-1])
     user = await UserDAO.get_by_id(session, user_id)
 
@@ -216,16 +384,65 @@ async def admin_ban_user(callback: CallbackQuery, session: AsyncSession):
         await callback.answer("❌ Foydalanuvchi topilmadi!", show_alert=True)
         return
 
+    if user.telegram_id in settings.admin_ids:
+        await callback.answer("⚠️ Super Adminni bloklab bo'lmaydi!", show_alert=True)
+        return
+
     new_status = not user.is_banned
     await UserDAO.ban_user(session, user_id, new_status)
 
-    status_text = "🔴 Banlandi" if new_status else "🟢 Ban olib tashlandi"
+    status_text = "🔴 Bloklandi (Ban)" if new_status else "🟢 Blokdan chiqarildi"
     await callback.answer(f"{status_text}: {user.full_name}", show_alert=True)
 
+    # Foydalanuvchini xabardor qilish
+    try:
+        if new_status:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text="🚫 <b>Sizning hisobingiz bot ma'murlari tomonidan bloklandi.</b>",
+            )
+        else:
+            await notify_user(
+                bot=bot,
+                user_telegram_id=user.telegram_id,
+                text="🟢 <b>Sizning hisobingiz blokdan chiqarildi!</b> Botdan yana to'liq foydalanishingiz mumkin.",
+            )
+    except Exception:
+        pass
+
     is_user_adm = user.is_admin or (user.telegram_id in settings.admin_ids)
-    await callback.message.edit_reply_markup(
-        reply_markup=get_admin_user_kb(user_id, new_status, is_user_adm)
+    from keyboards.inline import get_admin_user_kb
+    ban_label = "🔴 Bloklangan (Ban)" if new_status else "🟢 Faol"
+    role_status = "👑 Admin" if is_user_adm else "👤 Foydalanuvchi"
+
+    text = (
+        f"👤 <b>Foydalanuvchi ma'lumotlari</b>\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 Ismi: <b>{user.full_name}</b>\n"
+        f"🆔 Telegram ID: <code>{user.telegram_id}</code>\n"
     )
+    if user.username:
+        text += f"📎 Username: @{user.username}\n"
+    text += (
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Joriy balans: <b>{format_price(user.balance)}</b>\n"
+        f"💸 Jami xarajat: <b>{format_price(user.total_spent)}</b>\n"
+        f"📦 Buyurtmalar: <b>{user.total_orders} ta</b>\n"
+        f"📋 Holati: <b>{ban_label}</b>\n"
+        f"👑 Roli: <b>{role_status}</b>\n"
+        f"📅 Ro'yxatdan o'tgan: {format_datetime(user.created_at)}\n\n"
+        f"Boshqarish buyrug'ini tanlang 👇"
+    )
+
+    try:
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=get_admin_user_kb(user_id, new_status, is_user_adm),
+        )
+    except Exception:
+        pass
 
 
 @router.callback_query(F.data.startswith("adm_toggle_admin_"), IsAdmin())

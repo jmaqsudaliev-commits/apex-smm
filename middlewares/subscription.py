@@ -47,6 +47,24 @@ class SubscriptionMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         session = data.get("session")
+
+        # Ban (bloklash) tekshiruvi
+        if session:
+            from database.dao import UserDAO
+            try:
+                db_user = await UserDAO.get_by_telegram_id(session, user.id)
+                if db_user and db_user.is_banned:
+                    ban_msg = (
+                        "🚫 <b>Sizning hisobingiz bot ma'murlari tomonidan bloklangan!</b>\n\n"
+                        "Savollaringiz bo'lsa, qo'llab-quvvatlash xizmati bilan bog'laning."
+                    )
+                    if isinstance(event, Message):
+                        await event.answer(ban_msg, parse_mode="HTML")
+                    elif isinstance(event, CallbackQuery):
+                        await event.answer("🚫 Siz botdan bloklangansiz!", show_alert=True)
+                    return
+            except Exception:
+                pass
         if session:
             from database.dao import UserDAO
             try:

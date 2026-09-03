@@ -133,6 +133,22 @@ class UserDAO:
         return result.scalar() or 0
 
     @staticmethod
+    async def get_banned_count(session: AsyncSession) -> int:
+        stmt = select(func.count(User.id)).where(User.is_banned == True)
+        result = await session.execute(stmt)
+        return result.scalar() or 0
+
+    @staticmethod
+    async def get_users_paginated(
+        session: AsyncSession, page: int = 1, page_size: int = 8
+    ) -> Sequence[User]:
+        """Foydalanuvchilarni sahifalab olish (oxirgi ro'yxatdan o'tganlar bo'yicha)"""
+        offset = max(0, (page - 1) * page_size)
+        stmt = select(User).order_by(User.id.desc()).offset(offset).limit(page_size)
+        result = await session.execute(stmt)
+        return result.scalars().all()
+
+    @staticmethod
     async def get_all_ids(session: AsyncSession) -> List[int]:
         """Barcha foydalanuvchilarning Telegram ID lari (broadcast uchun)"""
         stmt = select(User.telegram_id).where(User.is_banned == False)

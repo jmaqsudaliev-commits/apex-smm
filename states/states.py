@@ -39,6 +39,7 @@ class AdminStates(StatesGroup):
     # Foydalanuvchi boshqaruvi
     search_user = State()
     set_user_balance = State()
+    add_user_bonus = State()
 
     # Broadcast
     broadcast_message = State()
